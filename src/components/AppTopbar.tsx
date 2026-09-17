@@ -29,7 +29,7 @@ export function AppTopbar({
 }: AppTopbarProps) {
   return (
     <header
-      className="topbar shrink-0"
+      className="topbar grid h-16 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4.5 px-4.5 pl-19.5 select-none"
       data-tauri-drag-region
       onMouseDown={(event) => {
         if (event.button !== 0) return;
@@ -37,40 +37,52 @@ export function AppTopbar({
         void getCurrentWindow().startDragging().catch(onDragError);
       }}
     >
-      <div className="brand-lockup">
-        <div className="brand-mark" aria-hidden="true">
+      <div className="brand-lockup flex min-w-0 items-center gap-2.75">
+        <div
+          className="brand-mark flex size-7 items-center justify-center gap-0.75 -skew-x-9"
+          aria-hidden="true"
+        >
           <span />
           <span />
           <span />
         </div>
-        <span className="brand-name">Pliflo</span>
-        <span className="brand-tag">PRINT FLOW</span>
+        <span className="brand-name text-lg font-700 tracking-[-0.025em]">Pliflo</span>
+        <span className="brand-tag border-l pl-2.75 text-xs font-700 tracking-[0.14em]">
+          PRINT FLOW
+        </span>
       </div>
 
-      <div className="transport" aria-label={labels.queueStatus}>
-        <div className="transport-item">
+      <div
+        className="transport flex h-9 min-w-75.5 items-center justify-self-center"
+        aria-label={labels.queueStatus}
+      >
+        <div className="transport-item flex h-full min-w-25 items-center justify-center gap-1.75 px-2.5 text-xs tracking-[0.01em]">
           <span className="transport-light ready" />
           <span>{labels.ready}</span>
           <strong>{pendingCount}</strong>
         </div>
-        <div className="transport-item">
+        <div className="transport-item flex h-full min-w-25 items-center justify-center gap-1.75 px-2.5 text-xs tracking-[0.01em]">
           <span className="transport-light active" />
           <span>{labels.active}</span>
           <strong>{activeCount}</strong>
         </div>
-        <div className="transport-item">
+        <div className="transport-item flex h-full min-w-25 items-center justify-center gap-1.75 px-2.5 text-xs tracking-[0.01em]">
           <span className="transport-light done" />
           <span>{labels.done}</span>
           <strong>{completedCount}</strong>
         </div>
       </div>
 
-      <div className="topbar-actions">
-        <button className="ghost-button" type="button" onClick={onToggleHistory}>
+      <div className="topbar-actions flex items-center justify-self-end gap-2">
+        <button
+          className="ghost-button flex h-8 items-center gap-1.75 px-2.75 text-xs font-650"
+          type="button"
+          onClick={onToggleHistory}
+        >
           <Archive size={16} /> {labels.history}
         </button>
         <button
-          className="icon-button"
+          className="icon-button grid size-8 place-items-center p-0"
           type="button"
           aria-label={labels.settings}
           title={labels.settings}

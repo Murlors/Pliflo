@@ -29,15 +29,19 @@ export function PdfPreviewPanel({
     selected && !queueRunning && !["submitting", "submitted", "printing"].includes(selected.state);
 
   return (
-    <section className="preview-panel">
-      <div className="preview-toolbar">
-        <div className="document-title">
-          <span className="surface-label">{labels.paperStage}</span>
-          <strong>{selected?.name ?? labels.noDocument}</strong>
+    <section className="preview-panel relative flex min-h-0 min-w-0 flex-col">
+      <div className="preview-toolbar flex min-h-17.5 shrink-0 items-center justify-between gap-3 px-5 pb-2 pt-3.5">
+        <div className="document-title min-w-0">
+          <span className="surface-label block text-xs font-700 tracking-[0.1em] uppercase">
+            {labels.paperStage}
+          </span>
+          <strong className="mt-1.5 block max-w-130 truncate text-sm font-640">
+            {selected?.name ?? labels.noDocument}
+          </strong>
         </div>
         {canRemove && (
           <button
-            className="icon-button danger-hover"
+            className="icon-button danger-hover grid size-8 place-items-center p-0"
             type="button"
             title={labels.remove}
             aria-label={labels.removePdf}
@@ -48,15 +52,15 @@ export function PdfPreviewPanel({
         )}
       </div>
 
-      <div className="preview-stage">
+      <div className="preview-stage relative grid min-h-0 flex-1 place-items-center overflow-hidden px-8 pb-3.5 pt-3">
         {selected ? (
           <iframe
-            className="pdf-preview"
+            className="pdf-preview relative z-1 h-full w-[min(100%,690px)] border-0 rounded"
             title={labels.previewTitle(selected.name)}
             src={convertFileSrc(selected.path)}
           />
         ) : (
-          <div className="preview-empty">
+          <div className="preview-empty relative z-1 flex flex-col items-center gap-5 text-sm">
             <div className="preview-sheet">
               <span />
               <span />
@@ -68,7 +72,7 @@ export function PdfPreviewPanel({
       </div>
 
       {selected && (
-        <div className="preview-footer">
+        <div className="preview-footer flex min-h-9 shrink-0 items-center justify-between gap-3 px-5 pb-2.5 pt-1 text-xs">
           <span>{selected.pages ? labels.pages(selected.pages) : labels.pdfDocument}</span>
           <span>{labels.previewNote}</span>
         </div>

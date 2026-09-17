@@ -720,11 +720,15 @@ function App() {
           }}
         />
 
-        <aside className="settings-panel">
-          <div className="panel-heading">
+        <aside className="settings-panel flex min-h-0 min-w-0 flex-col">
+          <div className="panel-heading flex min-h-19.5 shrink-0 items-center justify-between gap-3 px-4 pb-3.25 pt-3.75">
             <div>
-              <h2>{copy.printSetup}</h2>
-              <span className="panel-caption">{copy.setupCaption}</span>
+              <h2 className="m-0 text-base font-680 leading-none tracking-tight">
+                {copy.printSetup}
+              </h2>
+              <span className="panel-caption mt-1.25 block text-xs leading-snug">
+                {copy.setupCaption}
+              </span>
             </div>
             <button
               className="icon-button"
@@ -740,9 +744,9 @@ function App() {
               <RotateCcw size={15} />
             </button>
           </div>
-          <div className="setting-section printer-section">
-            <label>{copy.printer}</label>
-            <div className="select-shell prominent">
+          <div className="setting-section printer-section px-3.75 pb-3.25 pt-3.5">
+            <label className="text-xs font-620">{copy.printer}</label>
+            <div className="select-shell prominent mt-2 flex h-10.5 items-center gap-2 px-2.5">
               <Printer size={17} />
               <select
                 aria-label={copy.printer}
@@ -766,21 +770,26 @@ function App() {
               </select>
               <ChevronDown size={15} />
             </div>
-            <div className="printer-meta">
+            <div className="printer-meta mt-2 flex items-center gap-1.5 text-xs">
               <span className="printer-state-dot" />
               <span>
                 {printers.find((printer) => printer.name === selectedPrinter)?.state === "detected"
                   ? copy.printerDetected
                   : copy.notConnected}
               </span>
-              <button type="button" disabled={queueRunning} onClick={() => void refreshPrinters()}>
+              <button
+                className="ml-auto flex items-center gap-1 text-xs"
+                type="button"
+                disabled={queueRunning}
+                onClick={() => void refreshPrinters()}
+              >
                 <RefreshCw size={13} /> {copy.refresh}
               </button>
             </div>
           </div>
-          <div className="scope-switch">
+          <div className="scope-switch mx-3.25 mt-2.5 flex p-0.75">
             <button
-              className={!selected ? "active" : ""}
+              className={`h-7.25 flex-1 justify-center gap-1.25 text-xs font-620 ${!selected ? "active" : ""}`}
               type="button"
               disabled={printSettingsLocked}
               onClick={() => setSelectedId(null)}
@@ -788,7 +797,7 @@ function App() {
               <Layers3 size={14} /> {copy.batch}
             </button>
             <button
-              className={selected ? "active" : ""}
+              className={`h-7.25 flex-1 justify-center gap-1.25 text-xs font-620 ${selected ? "active" : ""}`}
               type="button"
               disabled={!items.length || printSettingsLocked}
               onClick={() => setSelectedId(items[0]?.id ?? null)}
@@ -796,11 +805,14 @@ function App() {
               <FileText size={14} /> {copy.file}
             </button>
           </div>
-          <fieldset className="settings-scroll settings-fieldset" disabled={printSettingsLocked}>
-            <div className="setting-section">
-              <div className="setting-row">
-                <label>{copy.copies}</label>
-                <div className="stepper">
+          <fieldset
+            className="settings-scroll settings-fieldset min-h-0 flex-1 overflow-auto border-0 p-0 m-0"
+            disabled={printSettingsLocked}
+          >
+            <div className="setting-section px-3.75 py-2.75">
+              <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+                <label className="text-xs font-620">{copy.copies}</label>
+                <div className="stepper grid h-7 grid-cols-[27px_31px_27px] justify-self-end overflow-hidden">
                   <button
                     aria-label={copy.decreaseCopies}
                     type="button"
@@ -808,7 +820,9 @@ function App() {
                   >
                     −
                   </button>
-                  <span>{settings.copies}</span>
+                  <span className="grid place-items-center text-xs tabular-nums">
+                    {settings.copies}
+                  </span>
                   <button
                     aria-label={copy.increaseCopies}
                     type="button"
@@ -818,9 +832,9 @@ function App() {
                   </button>
                 </div>
               </div>
-              <div className="setting-row">
-                <label>{copy.paper}</label>
-                <div className="select-shell compact">
+              <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+                <label className="text-xs font-620">{copy.paper}</label>
+                <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
                   <select
                     aria-label={copy.paperSize}
                     value={settings.media}
@@ -842,19 +856,21 @@ function App() {
                   <ChevronDown size={14} />
                 </div>
               </div>
-              <div className="setting-row">
-                <label>{settings.pagesPerSheet > 1 ? copy.outputPageRange : copy.pageRange}</label>
+              <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+                <label className="text-xs font-620">
+                  {settings.pagesPerSheet > 1 ? copy.outputPageRange : copy.pageRange}
+                </label>
                 <input
-                  className="compact-input"
+                  className="compact-input h-7.25 w-38 justify-self-end px-2.25 text-xs"
                   inputMode="numeric"
                   value={settings.pageRange}
                   placeholder={copy.pageRangePlaceholder}
                   onChange={(event) => changeSetting({ pageRange: event.target.value })}
                 />
               </div>
-              <div className="setting-row">
-                <label>{copy.orientation}</label>
-                <div className="segmented">
+              <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+                <label className="text-xs font-620">{copy.orientation}</label>
+                <div className="segmented flex max-w-51.25 justify-self-end p-0.5">
                   <button
                     className={settings.orientation === "auto" ? "active" : ""}
                     type="button"
@@ -879,10 +895,10 @@ function App() {
                 </div>
               </div>
             </div>
-            <div className="setting-section">
-              <div className="setting-row">
-                <label>{copy.twoSided}</label>
-                <div className="select-shell compact">
+            <div className="setting-section px-3.75 py-2.75">
+              <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+                <label className="text-xs font-620">{copy.twoSided}</label>
+                <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
                   <select
                     aria-label={copy.twoSidedPrinting}
                     value={settings.duplex}
@@ -898,9 +914,9 @@ function App() {
                   <ChevronDown size={14} />
                 </div>
               </div>
-              <div className="setting-row">
-                <label>{copy.color}</label>
-                <div className="segmented">
+              <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+                <label className="text-xs font-620">{copy.color}</label>
+                <div className="segmented flex max-w-51.25 justify-self-end p-0.5">
                   <button
                     className={settings.color === "auto" ? "active" : ""}
                     type="button"
@@ -926,9 +942,9 @@ function App() {
                   </button>
                 </div>
               </div>
-              <div className="setting-row">
-                <label>{copy.scale}</label>
-                <div className="segmented">
+              <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+                <label className="text-xs font-620">{copy.scale}</label>
+                <div className="segmented flex max-w-51.25 justify-self-end p-0.5">
                   <button
                     className={settings.scale === "fit" ? "active" : ""}
                     type="button"
@@ -946,17 +962,17 @@ function App() {
                 </div>
               </div>
             </div>
-            <details className="advanced-settings">
-              <summary>
-                <span>
+            <details className="advanced-settings mx-3.25 mb-3 mt-2.5">
+              <summary className="flex min-h-9.5 items-center justify-between px-2.5 text-xs font-680">
+                <span className="flex items-center gap-1.75">
                   <SlidersHorizontal size={15} /> {copy.advanced}
                 </span>
                 <ChevronDown size={15} />
               </summary>
-              <div className="advanced-settings-body">
-                <div className="setting-row">
-                  <label>{copy.pagesPerSheet}</label>
-                  <div className="select-shell compact">
+              <div className="advanced-settings-body px-2.5 pb-2 pt-0.5">
+                <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2">
+                  <label className="text-xs font-620">{copy.pagesPerSheet}</label>
+                  <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
                     <select
                       value={settings.pagesPerSheet}
                       onChange={(event) =>
@@ -976,9 +992,11 @@ function App() {
                     <ChevronDown size={14} />
                   </div>
                 </div>
-                <div className="setting-row">
-                  <label>{settings.pagesPerSheet > 1 ? copy.outputPageSet : copy.pageSet}</label>
-                  <div className="select-shell compact">
+                <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2">
+                  <label className="text-xs font-620">
+                    {settings.pagesPerSheet > 1 ? copy.outputPageSet : copy.pageSet}
+                  </label>
+                  <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
                     <select
                       value={settings.pageSet}
                       onChange={(event) =>
@@ -992,7 +1010,7 @@ function App() {
                     <ChevronDown size={14} />
                   </div>
                 </div>
-                <label className="toggle-row">
+                <label className="toggle-row flex min-h-9.5 items-center justify-between gap-2.5 text-xs font-620">
                   <span>{copy.reverseOrder}</span>
                   <input
                     type="checkbox"
@@ -1001,9 +1019,9 @@ function App() {
                   />
                 </label>
                 {!!printerCapabilities?.trays.length && (
-                  <div className="setting-row">
-                    <label>{copy.paperSource}</label>
-                    <div className="select-shell compact">
+                  <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2">
+                    <label className="text-xs font-620">{copy.paperSource}</label>
+                    <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
                       <select
                         value={settings.tray}
                         onChange={(event) => changeSetting({ tray: event.target.value })}
@@ -1020,9 +1038,9 @@ function App() {
                   </div>
                 )}
                 {!!printerCapabilities?.qualities.length && (
-                  <div className="setting-row">
-                    <label>{copy.printQuality}</label>
-                    <div className="select-shell compact">
+                  <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2">
+                    <label className="text-xs font-620">{copy.printQuality}</label>
+                    <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
                       <select
                         value={settings.quality}
                         onChange={(event) =>
@@ -1049,26 +1067,29 @@ function App() {
               </div>
             </details>
           </fieldset>
-          <div className="print-actions">
-            <div className="print-estimate" aria-label={copy.estimatedSheets}>
-              <div>
-                <span>{copy.estimatedSheets}</span>
-                <strong>
+          <div className="print-actions shrink-0 px-3.25 pb-3.5 pt-3">
+            <div
+              className="print-estimate grid grid-cols-2 gap-2 pb-2.5"
+              aria-label={copy.estimatedSheets}
+            >
+              <div className="min-w-0 px-2.5 py-2.25">
+                <span className="text-xs">{copy.estimatedSheets}</span>
+                <strong className="mt-0.75 block text-base tabular-nums">
                   {printEstimate.unknownItems === pending.length && pending.length
                     ? "—"
                     : printEstimate.sheets}
                 </strong>
               </div>
-              <div>
-                <span>{copy.printedPages}</span>
-                <strong>
+              <div className="min-w-0 px-2.5 py-2.25">
+                <span className="text-xs">{copy.printedPages}</span>
+                <strong className="mt-0.75 block text-base tabular-nums">
                   {printEstimate.unknownItems === pending.length && pending.length
                     ? "—"
                     : printEstimate.printedPages}
                 </strong>
               </div>
               {printEstimate.unknownItems > 0 && (
-                <small>
+                <small className="col-span-2 px-0.5 text-xs">
                   {copy.estimatePartial} · {printEstimate.unknownItems}
                 </small>
               )}
