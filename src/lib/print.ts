@@ -1,5 +1,5 @@
-import { DEFAULT_SETTINGS } from "../app/constants";
-import type { PdfInfo, PrinterCapabilities, PrinterOption, QueueItem } from "../app/types";
+import { DEFAULT_RENDER_OPTIONS, DEFAULT_SETTINGS } from "../app/constants";
+import type { DocumentInfo, PrinterCapabilities, PrinterOption, QueueItem } from "../app/types";
 
 export function formatBytes(bytes: number) {
   return bytes < 1024 * 1024
@@ -7,8 +7,14 @@ export function formatBytes(bytes: number) {
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function createQueueItem(pdf: PdfInfo): QueueItem {
-  return { ...pdf, id: crypto.randomUUID(), settings: { ...DEFAULT_SETTINGS }, state: "queued" };
+export function createQueueItem(document: DocumentInfo): QueueItem {
+  return {
+    ...document,
+    id: crypto.randomUUID(),
+    settings: { ...DEFAULT_SETTINGS },
+    renderOptions: { ...DEFAULT_RENDER_OPTIONS },
+    state: "queued",
+  };
 }
 
 function countPrintableSides(item: QueueItem) {

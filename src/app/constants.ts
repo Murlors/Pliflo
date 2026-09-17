@@ -1,4 +1,4 @@
-import type { AppPreferences, PrintSettings } from "./types";
+import type { AppPreferences, DocumentRenderOptions, PrintSettings } from "./types";
 
 export const DEFAULT_SETTINGS: PrintSettings = {
   copies: 1,
@@ -13,6 +13,12 @@ export const DEFAULT_SETTINGS: PrintSettings = {
   pageSet: "all",
   tray: "",
   quality: "printer",
+};
+
+export const DEFAULT_RENDER_OPTIONS: DocumentRenderOptions = {
+  xlsxSheet: "all",
+  xlsxScale: "fit-width",
+  imageSizing: "fit",
 };
 
 export const DEFAULT_PREFERENCES: AppPreferences = {

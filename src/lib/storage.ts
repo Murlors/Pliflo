@@ -1,4 +1,4 @@
-import { DEFAULT_PREFERENCES } from "../app/constants";
+import { DEFAULT_PREFERENCES, DEFAULT_RENDER_OPTIONS } from "../app/constants";
 import type { AppPreferences, QueueItem } from "../app/types";
 
 export function loadPreferences(): AppPreferences {
@@ -41,41 +41,58 @@ function parseStoredItems(key: string) {
   }
 }
 
+function normalizeStoredItem(item: QueueItem): QueueItem {
+  return {
+    ...item,
+    printPath: item.printPath || item.path,
+    format: item.format || "pdf",
+    generated: item.generated ?? false,
+    renderOptions: { ...DEFAULT_RENDER_OPTIONS, ...item.renderOptions },
+  };
+}
+
 export function loadStoredBatch(preferences: AppPreferences): QueueItem[] {
   if (!preferences.restoreBatch) return [];
 
-  return parseStoredItems("pliflo-batch").map((item) => {
-    if (item.state === "submitted" || item.state === "printing") {
-      return item.systemJobId
-        ? { ...item, error: undefined, finishedAt: undefined }
-        : {
-            ...item,
-            state: "failed" as const,
-            error: "Submission state could not be restored because no system job ID was recorded.",
-            finishedAt: Date.now(),
-          };
-    }
-    if (item.state === "submitting") {
+  return parseStoredItems("pliflo-batch")
+    .map(normalizeStoredItem)
+    .map((item) => {
+      if (item.state === "submitted" || item.state === "printing") {
+        return item.systemJobId
+          ? { ...item, error: undefined, finishedAt: undefined }
+          : {
+              ...item,
+              state: "failed" as const,
+              error:
+                "Submission state could not be restored because no system job ID was recorded.",
+              finishedAt: Date.now(),
+            };
+      }
+      if (item.state === "submitting") {
+        return {
+          ...item,
+          state: "failed" as const,
+          error:
+            "Submission was interrupted before a system job ID was recorded. Review before retrying.",
+          finishedAt: Date.now(),
+        };
+      }
       return {
         ...item,
-        state: "failed" as const,
-        error:
-          "Submission was interrupted before a system job ID was recorded. Review before retrying.",
-        finishedAt: Date.now(),
+        state: "queued" as const,
+        printPath: item.generated ? "" : item.path,
+        preparing: item.generated || undefined,
+        systemJobId: undefined,
+        error: undefined,
+        finishedAt: undefined,
       };
-    }
-    return {
-      ...item,
-      state: "queued" as const,
-      systemJobId: undefined,
-      error: undefined,
-      finishedAt: undefined,
-    };
-  });
+    });
 }
 
 export function loadStoredHistory(preferences: AppPreferences): QueueItem[] {
-  return preferences.historyRetention === "session" ? [] : parseStoredItems("pliflo-history");
+  return preferences.historyRetention === "session"
+    ? []
+    : parseStoredItems("pliflo-history").map(normalizeStoredItem);
 }
 
 export function recoverStoredJobId(error?: string) {

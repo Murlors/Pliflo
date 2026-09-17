@@ -3,13 +3,13 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
 import { CircleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DEFAULT_PREFERENCES, DEFAULT_SETTINGS } from "./app/constants";
+import { DEFAULT_PREFERENCES, DEFAULT_RENDER_OPTIONS, DEFAULT_SETTINGS } from "./app/constants";
 import { COPY } from "./app/i18n";
 import type {
   AppPreferences,
+  DocumentRenderOptions,
   JobState,
   Locale,
-  PdfInfo,
   PrinterCapabilities,
   PrinterInfo,
   PrintSettings,
@@ -25,6 +25,13 @@ import { PdfPreviewPanel } from "./components/PdfPreviewPanel";
 import { PrintSettingsPanel } from "./components/PrintSettingsPanel";
 import { QueuePanel } from "./components/QueuePanel";
 import { createQueueItem, estimatePrintUsage } from "./lib/print";
+import {
+  cleanupGeneratedDocument,
+  documentFormat,
+  inspectSupportedFiles,
+  prepareDocument,
+  SUPPORTED_EXTENSIONS,
+} from "./lib/documents";
 import {
   loadPreferences,
   loadStoredBatch,
@@ -47,6 +54,7 @@ function App() {
     loadStoredHistory(preferences),
   );
   const archivedTerminalIdsRef = useRef(new Set(historyItems.map((item) => item.id)));
+  const restoredArtifactsRef = useRef(false);
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [selectedPrinter, setSelectedPrinter] = useState("");
   const [printerCapabilities, setPrinterCapabilities] = useState<PrinterCapabilities | null>(null);
@@ -105,6 +113,49 @@ function App() {
     localStorage.setItem("pliflo-locale", locale);
     document.documentElement.lang = locale;
   }, [locale]);
+
+  useEffect(() => {
+    void invoke("cleanup_stale_printable_pdfs").catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (restoredArtifactsRef.current) return;
+    restoredArtifactsRef.current = true;
+    const restored = items.filter((item) => item.state === "queued" && item.generated);
+    for (const item of restored) {
+      void inspectSupportedFiles([item.path])
+        .then(([file]) => {
+          if (!file) throw new Error("The source file is no longer available.");
+          return prepareDocument(file, item.renderOptions);
+        })
+        .then((prepared) => {
+          setItems((current) =>
+            current.map((candidate) =>
+              candidate.id === item.id
+                ? { ...candidate, ...prepared, preparing: false, error: undefined }
+                : candidate,
+            ),
+          );
+        })
+        .catch((error) => {
+          setItems((current) =>
+            current.map((candidate) =>
+              candidate.id === item.id
+                ? {
+                    ...candidate,
+                    preparing: false,
+                    state: "failed",
+                    error: String(error),
+                    finishedAt: Date.now(),
+                  }
+                : candidate,
+            ),
+          );
+        });
+    }
+    // Restored generated documents must rebuild their ephemeral printable artifact once per launch.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const freshTerminalItems = items.filter(
@@ -166,14 +217,44 @@ function App() {
 
   const addPaths = useCallback(
     async (paths: string[]) => {
-      const pdfPaths = paths.filter((path) => path.toLowerCase().endsWith(".pdf"));
-      if (!pdfPaths.length) return;
       try {
-        const info = await invoke<PdfInfo[]>("inspect_pdfs", { paths: pdfPaths });
-        const fresh = info.map(createQueueItem);
-        setItems((current) => [...current, ...fresh]);
-        setSelectedId((current) => current ?? fresh[0]?.id ?? null);
-        setNotice(null);
+        const files = await inspectSupportedFiles(paths);
+        if (!files.length) return;
+        const results = new Array<QueueItem | null>(files.length).fill(null);
+        let cursor = 0;
+        const prepareNext = async () => {
+          while (cursor < files.length) {
+            const index = cursor;
+            cursor += 1;
+            const file = files[index];
+            try {
+              results[index] = createQueueItem(await prepareDocument(file, DEFAULT_RENDER_OPTIONS));
+            } catch (error) {
+              const format = documentFormat(file.path);
+              if (!format) continue;
+              results[index] = {
+                ...createQueueItem({
+                  ...file,
+                  printPath: "",
+                  pages: null,
+                  format,
+                  generated: false,
+                }),
+                state: "failed",
+                error: String(error),
+                finishedAt: Date.now(),
+              };
+            }
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(2, files.length) }, prepareNext));
+        const fresh = results.filter((item): item is QueueItem => item !== null);
+        if (fresh.length) {
+          setItems((current) => [...current, ...fresh]);
+          setSelectedId((current) => current ?? fresh[0]?.id ?? null);
+        }
+        const failedCount = fresh.filter((item) => item.state === "failed").length;
+        setNotice(failedCount ? copy.addFilesFailed(failedCount) : null);
       } catch (error) {
         setNotice(copy.addFilesError(error));
       }
@@ -285,7 +366,7 @@ function App() {
     const result = await open({
       multiple: true,
       directory: false,
-      filters: [{ name: "PDF documents", extensions: ["pdf"] }],
+      filters: [{ name: "Documents", extensions: [...SUPPORTED_EXTENSIONS] }],
     });
     if (result) await addPaths(Array.isArray(result) ? result : [result]);
   }
@@ -307,6 +388,27 @@ function App() {
     );
   }
 
+  async function updateRenderOptions(id: string, patch: Partial<DocumentRenderOptions>) {
+    const item = items.find((candidate) => candidate.id === id);
+    if (!item || !["xlsx", "image"].includes(item.format)) return;
+    const nextOptions = { ...item.renderOptions, ...patch };
+    try {
+      const [file] = await inspectSupportedFiles([item.path]);
+      if (!file) throw new Error("The source file is no longer available.");
+      const prepared = await prepareDocument(file, nextOptions);
+      await cleanupGeneratedDocument(item);
+      setItems((current) =>
+        current.map((candidate) =>
+          candidate.id === id
+            ? { ...candidate, ...prepared, renderOptions: nextOptions, error: undefined }
+            : candidate,
+        ),
+      );
+    } catch (error) {
+      setNotice(copy.addFilesError(error));
+    }
+  }
+
   async function submitOne(item: QueueItem) {
     if (!selectedPrinter) {
       setNotice(copy.selectPrinter);
@@ -314,6 +416,10 @@ function App() {
     }
     if (!printerCapabilities) {
       setNotice(copy.printerCapabilitiesUnavailable);
+      return false;
+    }
+    if (!item.printPath || item.preparing) {
+      setNotice(copy.addFilesError("The document is still being prepared."));
       return false;
     }
     setItems((current) =>
@@ -325,7 +431,7 @@ function App() {
     );
     try {
       const result = await invoke<SubmitResult>("submit_print_job", {
-        path: item.path,
+        path: item.printPath,
         printer: selectedPrinter,
         settings: {
           ...item.settings,
@@ -458,7 +564,9 @@ function App() {
           queueRunning={queueRunning}
           labels={copy}
           onRemove={(id) => {
-            setItems((current) => current.filter((item) => item.id !== id));
+            const item = items.find((candidate) => candidate.id === id);
+            if (item) void cleanupGeneratedDocument(item);
+            setItems((current) => current.filter((candidate) => candidate.id !== id));
             setSelectedId(null);
           }}
         />
@@ -491,6 +599,9 @@ function App() {
           onSelectBatch={() => setSelectedId(null)}
           onSelectFile={() => setSelectedId(items[0]?.id ?? null)}
           onChangeSetting={changeSetting}
+          onChangeRenderOptions={(patch) => {
+            if (selected) void updateRenderOptions(selected.id, patch);
+          }}
           onStartQueue={() => void startQueue()}
           onToggleQueuePause={() => {
             if (queuePaused) {

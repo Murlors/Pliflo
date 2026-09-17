@@ -1,5 +1,15 @@
+use base64::Engine;
+use lopdf::{dictionary, Dictionary, Document, Object, Stream};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path, process::Command};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::atomic::{AtomicU64, Ordering},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+
+static ARTIFACT_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,6 +68,196 @@ struct PrintSettings {
 struct SubmitResult {
     job_id: String,
     raw: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileInfo {
+    path: String,
+    name: String,
+    size_bytes: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RenderedPageInput {
+    data_url: String,
+    pixel_width: u32,
+    pixel_height: u32,
+    page_width_pt: f32,
+    page_height_pt: f32,
+}
+
+fn rendered_root() -> PathBuf {
+    std::env::temp_dir().join("pliflo-rendered")
+}
+
+fn create_rendered_dir() -> Result<PathBuf, String> {
+    let root = rendered_root();
+    fs::create_dir_all(&root).map_err(|error| format!("Cannot create render cache: {error}"))?;
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let sequence = ARTIFACT_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = root.join(format!("{}-{nanos}-{sequence}", std::process::id()));
+    fs::create_dir(&dir).map_err(|error| format!("Cannot create render session: {error}"))?;
+    Ok(dir)
+}
+
+fn decode_canvas_jpeg(data_url: &str) -> Result<Vec<u8>, String> {
+    let encoded = data_url
+        .strip_prefix("data:image/jpeg;base64,")
+        .or_else(|| data_url.strip_prefix("data:image/jpg;base64,"))
+        .ok_or_else(|| "Rendered page must be a JPEG data URL.".to_string())?;
+    base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|error| format!("Cannot decode rendered page: {error}"))
+}
+
+fn add_jpeg_page(
+    doc: &mut Document,
+    pages_id: lopdf::ObjectId,
+    input: RenderedPageInput,
+) -> Result<lopdf::ObjectId, String> {
+    if input.pixel_width == 0
+        || input.pixel_height == 0
+        || input.page_width_pt <= 0.0
+        || input.page_height_pt <= 0.0
+    {
+        return Err("Rendered page dimensions are invalid.".to_string());
+    }
+    let jpeg = decode_canvas_jpeg(&input.data_url)?;
+    let image_id = doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject",
+            "Subtype" => "Image",
+            "Width" => input.pixel_width as i64,
+            "Height" => input.pixel_height as i64,
+            "ColorSpace" => "DeviceRGB",
+            "BitsPerComponent" => 8,
+            "Filter" => "DCTDecode",
+        },
+        jpeg,
+    ));
+    let content = format!(
+        "q\n{} 0 0 {} 0 0 cm\n/Im0 Do\nQ\n",
+        input.page_width_pt, input.page_height_pt
+    );
+    let content_id = doc.add_object(Stream::new(Dictionary::new(), content.into_bytes()));
+    let resources_id = doc.add_object(dictionary! {
+        "XObject" => dictionary! { "Im0" => image_id },
+    });
+    Ok(doc.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "Resources" => resources_id,
+        "MediaBox" => vec![
+            0.into(),
+            0.into(),
+            Object::Real(input.page_width_pt),
+            Object::Real(input.page_height_pt),
+        ],
+        "Contents" => content_id,
+    }))
+}
+
+#[tauri::command]
+fn inspect_files(paths: Vec<String>) -> Result<Vec<FileInfo>, String> {
+    paths
+        .into_iter()
+        .map(|path| {
+            let file_path = Path::new(&path);
+            let metadata = fs::metadata(file_path)
+                .map_err(|error| format!("Cannot read {path}: {error}"))?;
+            if !metadata.is_file() {
+                return Err(format!("Not a file: {path}"));
+            }
+            let name = file_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Document")
+                .to_string();
+            Ok(FileInfo {
+                path,
+                name,
+                size_bytes: metadata.len(),
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn read_local_file(path: String) -> Result<tauri::ipc::Response, String> {
+    let file_path = Path::new(&path);
+    let metadata = fs::metadata(file_path).map_err(|error| format!("Cannot read {path}: {error}"))?;
+    if !metadata.is_file() {
+        return Err(format!("Not a file: {path}"));
+    }
+    let bytes = fs::read(file_path).map_err(|error| format!("Cannot read {path}: {error}"))?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+#[tauri::command]
+fn create_printable_pdf(pages: Vec<RenderedPageInput>) -> Result<String, String> {
+    if pages.is_empty() {
+        return Err("The document did not produce any printable pages.".to_string());
+    }
+    let dir = create_rendered_dir()?;
+    let output = dir.join("printable.pdf");
+    let mut doc = Document::with_version("1.5");
+    let pages_id = doc.new_object_id();
+    let mut page_ids = Vec::with_capacity(pages.len());
+    for page in pages {
+        page_ids.push(add_jpeg_page(&mut doc, pages_id, page)?);
+    }
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => page_ids.iter().copied().map(Object::Reference).collect::<Vec<_>>(),
+            "Count" => page_ids.len() as i64,
+        }),
+    );
+    let catalog_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+    });
+    doc.trailer.set("Root", catalog_id);
+    doc.compress();
+    doc.save(&output)
+        .map_err(|error| format!("Cannot save printable PDF: {error}"))?;
+    Ok(output.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn cleanup_printable_pdf(path: String) -> Result<(), String> {
+    let root = rendered_root();
+    let candidate = PathBuf::from(path);
+    let canonical_root = root.canonicalize().unwrap_or(root);
+    let Some(parent) = candidate.parent() else { return Ok(()); };
+    let canonical_parent = parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf());
+    if canonical_parent.starts_with(&canonical_root) {
+        let _ = fs::remove_dir_all(canonical_parent);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn cleanup_stale_printable_pdfs() -> Result<(), String> {
+    let root = rendered_root();
+    let Ok(entries) = fs::read_dir(&root) else { return Ok(()); };
+    let cutoff = SystemTime::now()
+        .checked_sub(Duration::from_secs(48 * 60 * 60))
+        .unwrap_or(UNIX_EPOCH);
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let modified = entry.metadata().and_then(|meta| meta.modified()).unwrap_or(SystemTime::now());
+        if modified < cutoff {
+            let _ = fs::remove_dir_all(path);
+        }
+    }
+    Ok(())
 }
 
 fn command_output(program: &str, args: &[&str]) -> Result<String, String> {
@@ -698,7 +898,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            inspect_files,
+            read_local_file,
             inspect_pdfs,
+            create_printable_pdf,
+            cleanup_printable_pdf,
+            cleanup_stale_printable_pdfs,
             list_printers,
             get_printer_capabilities,
             submit_print_job,

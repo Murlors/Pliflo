@@ -1,4 +1,21 @@
-export type PdfInfo = { path: string; name: string; sizeBytes: number; pages: number | null };
+export type DocumentFormat = "pdf" | "docx" | "pptx" | "xlsx" | "markdown" | "image";
+
+export type DocumentInfo = {
+  path: string;
+  printPath: string;
+  name: string;
+  sizeBytes: number;
+  pages: number | null;
+  format: DocumentFormat;
+  generated: boolean;
+  sheetNames?: string[];
+};
+
+export type DocumentRenderOptions = {
+  xlsxSheet: "all" | number;
+  xlsxScale: "fit-width" | "actual";
+  imageSizing: "fit" | "actual";
+};
 
 export type PrinterInfo = { name: string; isDefault: boolean; state: string };
 
@@ -36,10 +53,12 @@ export type PrintSettings = {
   quality: "printer" | "draft" | "normal" | "high";
 };
 
-export type QueueItem = PdfInfo & {
+export type QueueItem = DocumentInfo & {
   id: string;
   settings: PrintSettings;
+  renderOptions: DocumentRenderOptions;
   state: JobState;
+  preparing?: boolean;
   systemJobId?: string;
   error?: string;
   finishedAt?: number;

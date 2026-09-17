@@ -9,7 +9,13 @@ import {
   RotateCcw,
   SlidersHorizontal,
 } from "lucide-react";
-import type { PrinterCapabilities, PrinterInfo, PrintSettings, QueueItem } from "../app/types";
+import type {
+  DocumentRenderOptions,
+  PrinterCapabilities,
+  PrinterInfo,
+  PrintSettings,
+  QueueItem,
+} from "../app/types";
 import { supportsPrinterChoice } from "../lib/print";
 import { StatusIcon } from "./StatusIcon";
 
@@ -49,6 +55,13 @@ type Labels = {
   scale: string;
   fit: string;
   advanced: string;
+  documentOptions: string;
+  sheets: string;
+  allSheets: string;
+  spreadsheetScale: string;
+  fitWidth: string;
+  imageSizing: string;
+  actualSize: string;
   pagesPerSheet: string;
   outputPageSet: string;
   pageSet: string;
@@ -97,6 +110,7 @@ type PrintSettingsPanelProps = {
   onSelectBatch: () => void;
   onSelectFile: () => void;
   onChangeSetting: (patch: Partial<PrintSettings>) => void;
+  onChangeRenderOptions: (patch: Partial<DocumentRenderOptions>) => void;
   onStartQueue: () => void;
   onToggleQueuePause: () => void;
   onCancelJob: (item: QueueItem) => void;
@@ -121,6 +135,7 @@ export function PrintSettingsPanel({
   onSelectBatch,
   onSelectFile,
   onChangeSetting,
+  onChangeRenderOptions,
   onStartQueue,
   onToggleQueuePause,
   onCancelJob,
@@ -365,6 +380,75 @@ export function PrintSettingsPanel({
             <ChevronDown size={15} />
           </summary>
           <div className="advanced-settings-body px-2.5 pb-2 pt-0.5">
+            {selected?.format === "xlsx" && (
+              <>
+                <div className="surface-label mb-1 mt-1 text-[10px] font-700 uppercase tracking-[0.08em]">
+                  {labels.documentOptions}
+                </div>
+                <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
+                  <label className="text-xs font-620">{labels.sheets}</label>
+                  <div className="select-shell compact h-7.25 w-38 justify-self-end px-2 max-[1240px]:w-35.5">
+                    <select
+                      value={selected.renderOptions.xlsxSheet}
+                      onChange={(event) =>
+                        onChangeRenderOptions({
+                          xlsxSheet:
+                            event.target.value === "all" ? "all" : Number(event.target.value),
+                        })
+                      }
+                    >
+                      <option value="all">{labels.allSheets}</option>
+                      {selected.sheetNames?.map((name, index) => (
+                        <option key={`${index}-${name}`} value={index}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={14} />
+                  </div>
+                </div>
+                <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
+                  <label className="text-xs font-620">{labels.spreadsheetScale}</label>
+                  <div className="segmented flex max-w-51.25 justify-self-end p-0.5">
+                    <button
+                      className={selected.renderOptions.xlsxScale === "fit-width" ? "active" : ""}
+                      type="button"
+                      onClick={() => onChangeRenderOptions({ xlsxScale: "fit-width" })}
+                    >
+                      {labels.fitWidth}
+                    </button>
+                    <button
+                      className={selected.renderOptions.xlsxScale === "actual" ? "active" : ""}
+                      type="button"
+                      onClick={() => onChangeRenderOptions({ xlsxScale: "actual" })}
+                    >
+                      100%
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+            {selected?.format === "image" && (
+              <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
+                <label className="text-xs font-620">{labels.imageSizing}</label>
+                <div className="segmented flex max-w-51.25 justify-self-end p-0.5">
+                  <button
+                    className={selected.renderOptions.imageSizing === "fit" ? "active" : ""}
+                    type="button"
+                    onClick={() => onChangeRenderOptions({ imageSizing: "fit" })}
+                  >
+                    {labels.fit}
+                  </button>
+                  <button
+                    className={selected.renderOptions.imageSizing === "actual" ? "active" : ""}
+                    type="button"
+                    onClick={() => onChangeRenderOptions({ imageSizing: "actual" })}
+                  >
+                    {labels.actualSize}
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
               <label className="text-xs font-620">{labels.pagesPerSheet}</label>
               <div className="select-shell compact h-7.25 w-38 justify-self-end px-2 max-[1240px]:w-35.5">

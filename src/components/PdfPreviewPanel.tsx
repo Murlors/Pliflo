@@ -53,11 +53,11 @@ export function PdfPreviewPanel({
       </div>
 
       <div className="preview-stage relative grid min-h-0 flex-1 place-items-center overflow-hidden px-8 pb-3.5 pt-3">
-        {selected ? (
+        {selected?.printPath ? (
           <iframe
             className="pdf-preview relative z-1 h-full w-[min(100%,690px)] border-0 rounded"
             title={labels.previewTitle(selected.name)}
-            src={convertFileSrc(selected.path)}
+            src={convertFileSrc(selected.printPath)}
           />
         ) : (
           <div className="preview-empty relative z-1 flex flex-col items-center gap-5 text-sm">
@@ -66,7 +66,7 @@ export function PdfPreviewPanel({
               <span />
               <span />
             </div>
-            <p className="m-0">{labels.previewEmpty}</p>
+            <p className="m-0">{selected?.preparing ? labels.previewNote : labels.previewEmpty}</p>
           </div>
         )}
       </div>
