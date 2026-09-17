@@ -283,6 +283,23 @@ function App() {
           <span className="brand-name">Pliflo</span>
           <span className="brand-tag">PRINT FLOW</span>
         </div>
+        <div className="transport" aria-label="Queue status">
+          <div className="transport-item">
+            <span className="transport-light ready" />
+            <span>Ready</span>
+            <strong>{pending.length}</strong>
+          </div>
+          <div className="transport-item">
+            <span className="transport-light active" />
+            <span>Active</span>
+            <strong>{active.length}</strong>
+          </div>
+          <div className="transport-item">
+            <span className="transport-light done" />
+            <span>Done</span>
+            <strong>{completed.length}</strong>
+          </div>
+        </div>
         <div className="topbar-actions">
           <button
             className="ghost-button"
@@ -298,7 +315,7 @@ function App() {
       </header>
 
       {notice && (
-        <div className="notice-bar">
+        <div className="notice-bar" aria-live="polite">
           <CircleAlert size={15} />
           <span>{notice}</span>
           <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss">
@@ -311,8 +328,8 @@ function App() {
         <aside className="queue-panel">
           <div className="panel-heading">
             <div>
-              <span className="eyebrow">DOCUMENTS</span>
               <h1>Print queue</h1>
+              <span className="panel-caption">{items.length} documents in this batch</span>
             </div>
             <button className="add-button" type="button" onClick={() => void chooseFiles()}>
               <Plus size={17} /> Add PDF
@@ -321,9 +338,12 @@ function App() {
           <div className="search-row">
             <Search size={15} />
             <input
+              name="queue-search"
+              autoComplete="off"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Find in this batch"
+              aria-label="Search documents"
             />
             <span>{items.length}</span>
           </div>
@@ -384,7 +404,7 @@ function App() {
         <section className="preview-panel">
           <div className="preview-toolbar">
             <div className="document-title">
-              <span className="eyebrow">PREVIEW</span>
+              <span className="surface-label">Paper stage</span>
               <strong>{selected?.name ?? "No document selected"}</strong>
             </div>
             {selected && (
@@ -392,6 +412,7 @@ function App() {
                 className="icon-button danger-hover"
                 type="button"
                 title="Remove"
+                aria-label="Remove selected PDF"
                 onClick={() => {
                   setItems((current) => current.filter((item) => item.id !== selected.id));
                   setSelectedId(null);
@@ -430,8 +451,8 @@ function App() {
         <aside className="settings-panel">
           <div className="panel-heading">
             <div>
-              <span className="eyebrow">OUTPUT</span>
               <h2>Print setup</h2>
+              <span className="panel-caption">Tune batch defaults or this file</span>
             </div>
             <button
               className="icon-button"
@@ -441,6 +462,7 @@ function App() {
                 if (selected) updateItemSettings(selected.id, DEFAULT_SETTINGS);
               }}
               title="Reset"
+              aria-label="Reset print settings"
             >
               <RotateCcw size={15} />
             </button>
@@ -450,6 +472,7 @@ function App() {
             <div className="select-shell prominent">
               <Printer size={17} />
               <select
+                aria-label="Printer"
                 value={selectedPrinter}
                 onChange={(event) => setSelectedPrinter(event.target.value)}
               >
@@ -497,6 +520,7 @@ function App() {
                 <label>Copies</label>
                 <div className="stepper">
                   <button
+                    aria-label="Decrease copies"
                     type="button"
                     onClick={() => changeSetting({ copies: Math.max(1, settings.copies - 1) })}
                   >
@@ -504,6 +528,7 @@ function App() {
                   </button>
                   <span>{settings.copies}</span>
                   <button
+                    aria-label="Increase copies"
                     type="button"
                     onClick={() => changeSetting({ copies: Math.min(99, settings.copies + 1) })}
                   >
@@ -515,6 +540,7 @@ function App() {
                 <label>Paper</label>
                 <div className="select-shell compact">
                   <select
+                    aria-label="Paper size"
                     value={settings.media}
                     onChange={(event) => changeSetting({ media: event.target.value })}
                   >
@@ -557,6 +583,7 @@ function App() {
                 <label>Two-sided</label>
                 <div className="select-shell compact">
                   <select
+                    aria-label="Two-sided printing"
                     value={settings.duplex}
                     onChange={(event) =>
                       changeSetting({ duplex: event.target.value as PrintSettings["duplex"] })
@@ -676,10 +703,15 @@ function App() {
         <div className="history-drawer">
           <div className="drawer-heading">
             <div>
-              <span className="eyebrow">RECENT</span>
               <h2>Print history</h2>
+              <span className="panel-caption">Finished, cancelled & failed jobs</span>
             </div>
-            <button className="icon-button" type="button" onClick={() => setHistoryOpen(false)}>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="Close print history"
+              onClick={() => setHistoryOpen(false)}
+            >
               <X size={17} />
             </button>
           </div>
