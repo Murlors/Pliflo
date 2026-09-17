@@ -1,19 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
-import {
-  ChevronDown,
-  CircleAlert,
-  FileText,
-  Layers3,
-  Pause,
-  Play,
-  Printer,
-  RefreshCw,
-  RotateCcw,
-  SlidersHorizontal,
-  X,
-} from "lucide-react";
+import { ChevronDown, CircleAlert, FileText, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_PREFERENCES, DEFAULT_SETTINGS } from "./app/constants";
 import type {
@@ -31,9 +19,10 @@ import type {
 import "./styles/app.css";
 import { AppTopbar } from "./components/AppTopbar";
 import { PdfPreviewPanel } from "./components/PdfPreviewPanel";
+import { PrintSettingsPanel } from "./components/PrintSettingsPanel";
 import { QueuePanel } from "./components/QueuePanel";
 import { StatusIcon } from "./components/StatusIcon";
-import { createQueueItem, estimatePrintUsage, supportsPrinterChoice } from "./lib/print";
+import { createQueueItem, estimatePrintUsage } from "./lib/print";
 import {
   loadPreferences,
   loadStoredBatch,
@@ -351,7 +340,6 @@ function App() {
     [historyItems],
   );
   const printEstimate = estimatePrintUsage(pending, printerCapabilities);
-  const printSettingsLocked = queueRunning;
   const visibleItems = useMemo(() => {
     const query = search.trim().toLowerCase();
     return query ? items.filter((item) => item.name.toLowerCase().includes(query)) : items;
@@ -720,432 +708,45 @@ function App() {
           }}
         />
 
-        <aside className="settings-panel flex min-h-0 min-w-0 flex-col">
-          <div className="panel-heading flex min-h-19.5 shrink-0 items-center justify-between gap-3 px-4 pb-3.25 pt-3.75">
-            <div>
-              <h2 className="m-0 text-base font-680 leading-none tracking-tight">
-                {copy.printSetup}
-              </h2>
-              <span className="panel-caption mt-1.25 block text-xs leading-snug">
-                {copy.setupCaption}
-              </span>
-            </div>
-            <button
-              className="icon-button"
-              type="button"
-              disabled={printSettingsLocked}
-              onClick={() => {
-                setBatchSettings({ ...DEFAULT_SETTINGS });
-                if (selected) updateItemSettings(selected.id, DEFAULT_SETTINGS);
-              }}
-              title={copy.reset}
-              aria-label={copy.resetSettings}
-            >
-              <RotateCcw size={15} />
-            </button>
-          </div>
-          <div className="setting-section printer-section px-3.75 pb-3.25 pt-3.5">
-            <label className="text-xs font-620">{copy.printer}</label>
-            <div className="select-shell prominent mt-2 flex h-10.5 items-center gap-2 px-2.5">
-              <Printer size={17} />
-              <select
-                aria-label={copy.printer}
-                value={selectedPrinter}
-                disabled={queueRunning}
-                onChange={(event) => {
-                  setPrinterCapabilities(null);
-                  setSelectedPrinter(event.target.value);
-                  if (preferences.printerPreference === "last") {
-                    localStorage.setItem("pliflo-last-printer", event.target.value);
-                  }
-                }}
-              >
-                {!printers.length && <option value="">{copy.noPrinters}</option>}
-                {printers.map((printer) => (
-                  <option key={printer.name} value={printer.name}>
-                    {printer.name}
-                    {printer.isDefault ? ` — ${copy.defaultPrinter}` : ""}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={15} />
-            </div>
-            <div className="printer-meta mt-2 flex items-center gap-1.5 text-xs">
-              <span className="printer-state-dot" />
-              <span>
-                {printers.find((printer) => printer.name === selectedPrinter)?.state === "detected"
-                  ? copy.printerDetected
-                  : copy.notConnected}
-              </span>
-              <button
-                className="ml-auto flex items-center gap-1 text-xs"
-                type="button"
-                disabled={queueRunning}
-                onClick={() => void refreshPrinters()}
-              >
-                <RefreshCw size={13} /> {copy.refresh}
-              </button>
-            </div>
-          </div>
-          <div className="scope-switch mx-3.25 mt-2.5 flex p-0.75">
-            <button
-              className={`h-7.25 flex-1 justify-center gap-1.25 text-xs font-620 ${!selected ? "active" : ""}`}
-              type="button"
-              disabled={printSettingsLocked}
-              onClick={() => setSelectedId(null)}
-            >
-              <Layers3 size={14} /> {copy.batch}
-            </button>
-            <button
-              className={`h-7.25 flex-1 justify-center gap-1.25 text-xs font-620 ${selected ? "active" : ""}`}
-              type="button"
-              disabled={!items.length || printSettingsLocked}
-              onClick={() => setSelectedId(items[0]?.id ?? null)}
-            >
-              <FileText size={14} /> {copy.file}
-            </button>
-          </div>
-          <fieldset
-            className="settings-scroll settings-fieldset min-h-0 flex-1 overflow-auto border-0 p-0 m-0"
-            disabled={printSettingsLocked}
-          >
-            <div className="setting-section px-3.75 py-2.75">
-              <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
-                <label className="text-xs font-620">{copy.copies}</label>
-                <div className="stepper grid h-7 grid-cols-[27px_31px_27px] justify-self-end overflow-hidden">
-                  <button
-                    aria-label={copy.decreaseCopies}
-                    type="button"
-                    onClick={() => changeSetting({ copies: Math.max(1, settings.copies - 1) })}
-                  >
-                    −
-                  </button>
-                  <span className="grid place-items-center text-xs tabular-nums">
-                    {settings.copies}
-                  </span>
-                  <button
-                    aria-label={copy.increaseCopies}
-                    type="button"
-                    onClick={() => changeSetting({ copies: Math.min(99, settings.copies + 1) })}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-              <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
-                <label className="text-xs font-620">{copy.paper}</label>
-                <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
-                  <select
-                    aria-label={copy.paperSize}
-                    value={settings.media}
-                    onChange={(event) => changeSetting({ media: event.target.value })}
-                  >
-                    {(printerCapabilities?.media.length
-                      ? printerCapabilities.media
-                      : [
-                          { value: "A4", label: "A4", isDefault: true },
-                          { value: "Letter", label: "Letter", isDefault: false },
-                          { value: "Legal", label: "Legal", isDefault: false },
-                        ]
-                    ).map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown size={14} />
-                </div>
-              </div>
-              <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
-                <label className="text-xs font-620">
-                  {settings.pagesPerSheet > 1 ? copy.outputPageRange : copy.pageRange}
-                </label>
-                <input
-                  className="compact-input h-7.25 w-38 justify-self-end px-2.25 text-xs"
-                  inputMode="numeric"
-                  value={settings.pageRange}
-                  placeholder={copy.pageRangePlaceholder}
-                  onChange={(event) => changeSetting({ pageRange: event.target.value })}
-                />
-              </div>
-              <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
-                <label className="text-xs font-620">{copy.orientation}</label>
-                <div className="segmented flex max-w-51.25 justify-self-end p-0.5">
-                  <button
-                    className={settings.orientation === "auto" ? "active" : ""}
-                    type="button"
-                    onClick={() => changeSetting({ orientation: "auto" })}
-                  >
-                    {copy.auto}
-                  </button>
-                  <button
-                    className={settings.orientation === "portrait" ? "active" : ""}
-                    type="button"
-                    onClick={() => changeSetting({ orientation: "portrait" })}
-                  >
-                    {copy.portrait}
-                  </button>
-                  <button
-                    className={settings.orientation === "landscape" ? "active" : ""}
-                    type="button"
-                    onClick={() => changeSetting({ orientation: "landscape" })}
-                  >
-                    {copy.landscape}
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="setting-section px-3.75 py-2.75">
-              <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
-                <label className="text-xs font-620">{copy.twoSided}</label>
-                <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
-                  <select
-                    aria-label={copy.twoSidedPrinting}
-                    value={settings.duplex}
-                    disabled={!printerCapabilities || !printerCapabilities.supportsDuplex}
-                    onChange={(event) =>
-                      changeSetting({ duplex: event.target.value as PrintSettings["duplex"] })
-                    }
-                  >
-                    <option value="none">{copy.off}</option>
-                    <option value="long">{copy.longEdge}</option>
-                    <option value="short">{copy.shortEdge}</option>
-                  </select>
-                  <ChevronDown size={14} />
-                </div>
-              </div>
-              <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
-                <label className="text-xs font-620">{copy.color}</label>
-                <div className="segmented flex max-w-51.25 justify-self-end p-0.5">
-                  <button
-                    className={settings.color === "auto" ? "active" : ""}
-                    type="button"
-                    onClick={() => changeSetting({ color: "auto" })}
-                  >
-                    {copy.printerDefault}
-                  </button>
-                  <button
-                    className={settings.color === "color" ? "active" : ""}
-                    type="button"
-                    disabled={!printerCapabilities || !printerCapabilities.supportsColor}
-                    onClick={() => changeSetting({ color: "color" })}
-                  >
-                    {copy.color}
-                  </button>
-                  <button
-                    className={settings.color === "grayscale" ? "active" : ""}
-                    type="button"
-                    disabled={!printerCapabilities || !printerCapabilities.supportsColor}
-                    onClick={() => changeSetting({ color: "grayscale" })}
-                  >
-                    {copy.gray}
-                  </button>
-                </div>
-              </div>
-              <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
-                <label className="text-xs font-620">{copy.scale}</label>
-                <div className="segmented flex max-w-51.25 justify-self-end p-0.5">
-                  <button
-                    className={settings.scale === "fit" ? "active" : ""}
-                    type="button"
-                    onClick={() => changeSetting({ scale: "fit" })}
-                  >
-                    {copy.fit}
-                  </button>
-                  <button
-                    className={settings.scale === "actual" ? "active" : ""}
-                    type="button"
-                    onClick={() => changeSetting({ scale: "actual" })}
-                  >
-                    100%
-                  </button>
-                </div>
-              </div>
-            </div>
-            <details className="advanced-settings mx-3.25 mb-3 mt-2.5">
-              <summary className="flex min-h-9.5 items-center justify-between px-2.5 text-xs font-680">
-                <span className="flex items-center gap-1.75">
-                  <SlidersHorizontal size={15} /> {copy.advanced}
-                </span>
-                <ChevronDown size={15} />
-              </summary>
-              <div className="advanced-settings-body px-2.5 pb-2 pt-0.5">
-                <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2">
-                  <label className="text-xs font-620">{copy.pagesPerSheet}</label>
-                  <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
-                    <select
-                      value={settings.pagesPerSheet}
-                      onChange={(event) =>
-                        changeSetting({
-                          pagesPerSheet: Number(
-                            event.target.value,
-                          ) as PrintSettings["pagesPerSheet"],
-                        })
-                      }
-                    >
-                      {[1, 2, 4, 6, 9, 16].map((count) => (
-                        <option key={count} value={count}>
-                          {count}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown size={14} />
-                  </div>
-                </div>
-                <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2">
-                  <label className="text-xs font-620">
-                    {settings.pagesPerSheet > 1 ? copy.outputPageSet : copy.pageSet}
-                  </label>
-                  <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
-                    <select
-                      value={settings.pageSet}
-                      onChange={(event) =>
-                        changeSetting({ pageSet: event.target.value as PrintSettings["pageSet"] })
-                      }
-                    >
-                      <option value="all">{copy.allPages}</option>
-                      <option value="odd">{copy.oddPages}</option>
-                      <option value="even">{copy.evenPages}</option>
-                    </select>
-                    <ChevronDown size={14} />
-                  </div>
-                </div>
-                <label className="toggle-row flex min-h-9.5 items-center justify-between gap-2.5 text-xs font-620">
-                  <span>{copy.reverseOrder}</span>
-                  <input
-                    type="checkbox"
-                    checked={settings.reverse}
-                    onChange={(event) => changeSetting({ reverse: event.target.checked })}
-                  />
-                </label>
-                {!!printerCapabilities?.trays.length && (
-                  <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2">
-                    <label className="text-xs font-620">{copy.paperSource}</label>
-                    <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
-                      <select
-                        value={settings.tray}
-                        onChange={(event) => changeSetting({ tray: event.target.value })}
-                      >
-                        <option value="">{copy.printerDefault}</option>
-                        {printerCapabilities.trays.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown size={14} />
-                    </div>
-                  </div>
-                )}
-                {!!printerCapabilities?.qualities.length && (
-                  <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2">
-                    <label className="text-xs font-620">{copy.printQuality}</label>
-                    <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
-                      <select
-                        value={settings.quality}
-                        onChange={(event) =>
-                          changeSetting({ quality: event.target.value as PrintSettings["quality"] })
-                        }
-                      >
-                        <option value="printer">{copy.printerDefault}</option>
-                        {supportsPrinterChoice(printerCapabilities.qualities, ["Draft", "3"]) && (
-                          <option value="draft">{copy.qualityDraft}</option>
-                        )}
-                        {supportsPrinterChoice(printerCapabilities.qualities, ["Normal", "4"]) && (
-                          <option value="normal">{copy.qualityNormal}</option>
-                        )}
-                        {supportsPrinterChoice(printerCapabilities.qualities, [
-                          "High",
-                          "Best",
-                          "5",
-                        ]) && <option value="high">{copy.qualityHigh}</option>}
-                      </select>
-                      <ChevronDown size={14} />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </details>
-          </fieldset>
-          <div className="print-actions shrink-0 px-3.25 pb-3.5 pt-3">
-            <div
-              className="print-estimate grid grid-cols-2 gap-2 pb-2.5"
-              aria-label={copy.estimatedSheets}
-            >
-              <div className="min-w-0 px-2.5 py-2.25">
-                <span className="text-xs">{copy.estimatedSheets}</span>
-                <strong className="mt-0.75 block text-base tabular-nums">
-                  {printEstimate.unknownItems === pending.length && pending.length
-                    ? "—"
-                    : printEstimate.sheets}
-                </strong>
-              </div>
-              <div className="min-w-0 px-2.5 py-2.25">
-                <span className="text-xs">{copy.printedPages}</span>
-                <strong className="mt-0.75 block text-base tabular-nums">
-                  {printEstimate.unknownItems === pending.length && pending.length
-                    ? "—"
-                    : printEstimate.printedPages}
-                </strong>
-              </div>
-              {printEstimate.unknownItems > 0 && (
-                <small className="col-span-2 px-0.5 text-xs">
-                  {copy.estimatePartial} · {printEstimate.unknownItems}
-                </small>
-              )}
-            </div>
-            <div className="submission-note">
-              <span />
-              <p>
-                <strong>{copy.submissionTitle}</strong> {copy.submissionBody}
-              </p>
-            </div>
-            <div className="action-row">
-              {(queueRunning || queuePaused) && pending.length > 0 && (
-                <button
-                  className="secondary-action"
-                  type="button"
-                  onClick={() => {
-                    if (queuePaused) {
-                      void startQueue();
-                      return;
-                    }
-                    queuePausedRef.current = true;
-                    setQueuePaused(true);
-                  }}
-                >
-                  {queuePaused ? <Play size={16} /> : <Pause size={16} />}
-                  {queuePaused ? copy.resumeQueue : copy.pauseQueue}
-                </button>
-              )}
-              <button
-                className="print-button"
-                type="button"
-                disabled={
-                  !pending.length || !selectedPrinter || !printerCapabilities || queueRunning
-                }
-                onClick={() => void startQueue()}
-              >
-                <Printer size={17} /> {copy.printFiles(pending.length)}
-              </button>
-            </div>
-            {active
-              .filter((item) => item.systemJobId)
-              .map((item) => (
-                <button
-                  className="active-job"
-                  type="button"
-                  key={item.id}
-                  onClick={() => void cancelJob(item)}
-                >
-                  <span>
-                    <StatusIcon state={item.state} /> {item.name}
-                  </span>
-                  <small>{copy.cancel}</small>
-                </button>
-              ))}
-          </div>
-        </aside>
+        <PrintSettingsPanel
+          labels={copy}
+          printers={printers}
+          selectedPrinter={selectedPrinter}
+          printerCapabilities={printerCapabilities}
+          selected={selected}
+          itemsLength={items.length}
+          settings={settings}
+          pendingCount={pending.length}
+          activeItems={active}
+          printEstimate={printEstimate}
+          queueRunning={queueRunning}
+          queuePaused={queuePaused}
+          onReset={() => {
+            setBatchSettings({ ...DEFAULT_SETTINGS });
+            if (selected) updateItemSettings(selected.id, DEFAULT_SETTINGS);
+          }}
+          onPrinterChange={(printer) => {
+            setPrinterCapabilities(null);
+            setSelectedPrinter(printer);
+            if (preferences.printerPreference === "last") {
+              localStorage.setItem("pliflo-last-printer", printer);
+            }
+          }}
+          onRefreshPrinters={() => void refreshPrinters()}
+          onSelectBatch={() => setSelectedId(null)}
+          onSelectFile={() => setSelectedId(items[0]?.id ?? null)}
+          onChangeSetting={changeSetting}
+          onStartQueue={() => void startQueue()}
+          onToggleQueuePause={() => {
+            if (queuePaused) {
+              void startQueue();
+              return;
+            }
+            queuePausedRef.current = true;
+            setQueuePaused(true);
+          }}
+          onCancelJob={(item) => void cancelJob(item)}
+        />
       </section>
 
       {historyOpen && (
