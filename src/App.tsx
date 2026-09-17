@@ -13,9 +13,7 @@ import {
   GripVertical,
   Layers3,
   LoaderCircle,
-  Languages,
   MoreHorizontal,
-  Moon,
   Pause,
   Play,
   Plus,
@@ -25,7 +23,6 @@ import {
   Search,
   Settings2,
   SlidersHorizontal,
-  Sun,
   Trash2,
   X,
 } from "lucide-react";
@@ -70,10 +67,18 @@ type QueueItem = PdfInfo & {
   state: JobState;
   systemJobId?: string;
   error?: string;
+  finishedAt?: number;
 };
 type SubmitResult = { jobId: string; raw: string };
 type Theme = "dark" | "light";
+type ThemePreference = "system" | Theme;
 type Locale = "en" | "zh-CN";
+type AppPreferences = {
+  theme: ThemePreference;
+  printerPreference: "system" | "last";
+  restoreBatch: boolean;
+  historyRetention: "session" | "30d" | "forever";
+};
 
 const DEFAULT_SETTINGS: PrintSettings = {
   copies: 1,
@@ -89,6 +94,66 @@ const DEFAULT_SETTINGS: PrintSettings = {
   tray: "",
   quality: "printer",
 };
+
+const DEFAULT_PREFERENCES: AppPreferences = {
+  theme: "system",
+  printerPreference: "system",
+  restoreBatch: true,
+  historyRetention: "30d",
+};
+
+function loadPreferences(): AppPreferences {
+  try {
+    const parsed = JSON.parse(
+      localStorage.getItem("pliflo-preferences") ?? "{}",
+    ) as Partial<AppPreferences>;
+    const legacyTheme = localStorage.getItem("pliflo-theme");
+    return {
+      theme:
+        parsed.theme === "system" || parsed.theme === "light" || parsed.theme === "dark"
+          ? parsed.theme
+          : legacyTheme === "light" || legacyTheme === "dark"
+            ? legacyTheme
+            : DEFAULT_PREFERENCES.theme,
+      printerPreference:
+        parsed.printerPreference === "last" ? "last" : DEFAULT_PREFERENCES.printerPreference,
+      restoreBatch:
+        typeof parsed.restoreBatch === "boolean"
+          ? parsed.restoreBatch
+          : DEFAULT_PREFERENCES.restoreBatch,
+      historyRetention:
+        parsed.historyRetention === "session" ||
+        parsed.historyRetention === "30d" ||
+        parsed.historyRetention === "forever"
+          ? parsed.historyRetention
+          : DEFAULT_PREFERENCES.historyRetention,
+    };
+  } catch {
+    return DEFAULT_PREFERENCES;
+  }
+}
+
+function loadStoredItems(preferences: AppPreferences): QueueItem[] {
+  const parseItems = (key: string) => {
+    try {
+      const value = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown;
+      return Array.isArray(value) ? (value as QueueItem[]) : [];
+    } catch {
+      return [];
+    }
+  };
+  const history = preferences.historyRetention === "session" ? [] : parseItems("pliflo-history");
+  const batch = preferences.restoreBatch
+    ? parseItems("pliflo-batch").map((item) => ({
+        ...item,
+        state: "queued" as const,
+        systemJobId: undefined,
+        error: undefined,
+        finishedAt: undefined,
+      }))
+    : [];
+  return [...history, ...batch];
+}
 
 const COPY = {
   en: {
@@ -179,6 +244,29 @@ const COPY = {
     historyCaption: "Finished, cancelled & failed jobs",
     closeHistory: "Close print history",
     historyEmpty: "Finished jobs will collect here.",
+    settingsCaption: "App behavior and appearance",
+    closeSettings: "Close settings",
+    appearance: "Appearance",
+    theme: "Theme",
+    themeSystem: "System",
+    themeLightLabel: "Light",
+    themeDarkLabel: "Dark",
+    languageLabel: "Language",
+    english: "English",
+    chinese: "中文",
+    printingBehavior: "Printing",
+    printerPreference: "Default printer",
+    useSystemPrinter: "System default",
+    useLastPrinter: "Last used",
+    behavior: "Behavior & history",
+    restoreBatch: "Restore unfinished batch",
+    restoreBatchHint: "Only jobs that were not submitted are restored.",
+    historyRetention: "Keep history",
+    historySession: "This session",
+    history30d: "30 days",
+    historyForever: "Forever",
+    clearHistory: "Clear history",
+    resetAppSettings: "Reset app settings",
     selectPrinter: "Select a printer before starting the queue.",
     addFilesError: (error: unknown) => `Could not add files: ${String(error)}`,
     cancelError: (error: unknown) => `Cancel request failed: ${String(error)}`,
@@ -275,6 +363,29 @@ const COPY = {
     historyCaption: "已完成、已取消和失败的任务",
     closeHistory: "关闭打印历史",
     historyEmpty: "已结束的任务会显示在这里。",
+    settingsCaption: "应用行为与外观",
+    closeSettings: "关闭设置",
+    appearance: "外观",
+    theme: "主题",
+    themeSystem: "跟随系统",
+    themeLightLabel: "亮色",
+    themeDarkLabel: "暗色",
+    languageLabel: "语言",
+    english: "English",
+    chinese: "中文",
+    printingBehavior: "打印",
+    printerPreference: "默认打印机",
+    useSystemPrinter: "系统默认",
+    useLastPrinter: "上次使用",
+    behavior: "行为与历史",
+    restoreBatch: "恢复未完成批次",
+    restoreBatchHint: "仅恢复尚未提交到系统的任务。",
+    historyRetention: "历史保留",
+    historySession: "仅本次运行",
+    history30d: "30 天",
+    historyForever: "永久",
+    clearHistory: "清空历史",
+    resetAppSettings: "重置应用设置",
     selectPrinter: "开始队列前请先选择打印机。",
     addFilesError: (error: unknown) => `无法添加文件：${String(error)}`,
     cancelError: (error: unknown) => `取消任务失败：${String(error)}`,
@@ -306,17 +417,16 @@ function StatusIcon({ state }: { state: JobState }) {
 }
 
 function App() {
-  const [theme, setTheme] = useState<Theme>(() => {
-    const stored = localStorage.getItem("pliflo-theme");
-    if (stored === "light" || stored === "dark") return stored;
-    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  });
+  const [preferences, setPreferences] = useState<AppPreferences>(loadPreferences);
+  const [systemTheme, setSystemTheme] = useState<Theme>(() =>
+    window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark",
+  );
   const [locale, setLocale] = useState<Locale>(() =>
     localStorage.getItem("pliflo-locale") === "zh-CN" || navigator.language.startsWith("zh")
       ? "zh-CN"
       : "en",
   );
-  const [items, setItems] = useState<QueueItem[]>([]);
+  const [items, setItems] = useState<QueueItem[]>(() => loadStoredItems(preferences));
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [selectedPrinter, setSelectedPrinter] = useState("");
   const [printerCapabilities, setPrinterCapabilities] = useState<PrinterCapabilities | null>(null);
@@ -327,6 +437,8 @@ function App() {
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const theme = preferences.theme === "system" ? systemTheme : preferences.theme;
   const copy = COPY[locale];
   const stateLabel: Record<JobState, string> = {
     queued: copy.ready,
@@ -350,26 +462,62 @@ function App() {
   }, [items, search]);
 
   useEffect(() => {
-    localStorage.setItem("pliflo-theme", theme);
-  }, [theme]);
+    localStorage.setItem("pliflo-preferences", JSON.stringify(preferences));
+  }, [preferences]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: light)");
+    const syncTheme = (event: MediaQueryListEvent) =>
+      setSystemTheme(event.matches ? "light" : "dark");
+    media.addEventListener("change", syncTheme);
+    return () => media.removeEventListener("change", syncTheme);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("pliflo-locale", locale);
     document.documentElement.lang = locale;
   }, [locale]);
 
+  useEffect(() => {
+    if (preferences.restoreBatch) {
+      const batch = items.filter((item) => item.state === "queued");
+      localStorage.setItem("pliflo-batch", JSON.stringify(batch));
+    } else {
+      localStorage.removeItem("pliflo-batch");
+    }
+
+    if (preferences.historyRetention === "session") {
+      localStorage.removeItem("pliflo-history");
+      return;
+    }
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const history = items.filter(
+      (item) =>
+        ["completed", "cancelled", "failed"].includes(item.state) &&
+        (preferences.historyRetention === "forever" || (item.finishedAt ?? 0) >= cutoff),
+    );
+    localStorage.setItem("pliflo-history", JSON.stringify(history));
+  }, [items, preferences.historyRetention, preferences.restoreBatch]);
+
   const refreshPrinters = useCallback(async () => {
     try {
       const result = await invoke<PrinterInfo[]>("list_printers");
       setPrinters(result);
-      setSelectedPrinter(
-        (current) =>
-          current || result.find((printer) => printer.isDefault)?.name || result[0]?.name || "",
-      );
+      setSelectedPrinter((current) => {
+        if (current && result.some((printer) => printer.name === current)) return current;
+        const last = localStorage.getItem("pliflo-last-printer") ?? "";
+        if (
+          preferences.printerPreference === "last" &&
+          result.some((printer) => printer.name === last)
+        ) {
+          return last;
+        }
+        return result.find((printer) => printer.isDefault)?.name || result[0]?.name || "";
+      });
     } catch (error) {
       setNotice(String(error));
     }
-  }, []);
+  }, [preferences.printerPreference]);
 
   const addPaths = useCallback(
     async (paths: string[]) => {
@@ -437,7 +585,8 @@ function App() {
             setItems((current) =>
               current.map((candidate) => {
                 if (candidate.id !== item.id) return candidate;
-                if (state === "completed") return { ...candidate, state: "completed" };
+                if (state === "completed")
+                  return { ...candidate, state: "completed", finishedAt: Date.now() };
                 if (state === "pending") return { ...candidate, state: "printing" };
                 return candidate;
               }),
@@ -480,7 +629,7 @@ function App() {
     setItems((current) =>
       current.map((candidate) =>
         candidate.id === item.id
-          ? { ...candidate, state: "submitting", error: undefined }
+          ? { ...candidate, state: "submitting", error: undefined, finishedAt: undefined }
           : candidate,
       ),
     );
@@ -511,7 +660,7 @@ function App() {
       setItems((current) =>
         current.map((candidate) =>
           candidate.id === item.id
-            ? { ...candidate, state: "failed", error: String(error) }
+            ? { ...candidate, state: "failed", error: String(error), finishedAt: Date.now() }
             : candidate,
         ),
       );
@@ -528,7 +677,9 @@ function App() {
       if (item.systemJobId) await invoke("cancel_print_job", { jobId: item.systemJobId });
       setItems((current) =>
         current.map((candidate) =>
-          candidate.id === item.id ? { ...candidate, state: "cancelled" } : candidate,
+          candidate.id === item.id
+            ? { ...candidate, state: "cancelled", finishedAt: Date.now() }
+            : candidate,
         ),
       );
     } catch (error) {
@@ -583,30 +734,23 @@ function App() {
           <button
             className="ghost-button"
             type="button"
-            onClick={() => setHistoryOpen((value) => !value)}
+            onClick={() => {
+              setSettingsOpen(false);
+              setHistoryOpen((value) => !value);
+            }}
           >
             <Archive size={16} /> {copy.history}
           </button>
           <button
             className="icon-button"
             type="button"
-            aria-label={theme === "dark" ? copy.themeLight : copy.themeDark}
-            title={theme === "dark" ? copy.themeLight : copy.themeDark}
-            onClick={() => setTheme((value) => (value === "dark" ? "light" : "dark"))}
+            aria-label={copy.settings}
+            title={copy.settings}
+            onClick={() => {
+              setHistoryOpen(false);
+              setSettingsOpen((value) => !value);
+            }}
           >
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
-          <button
-            className="language-button"
-            type="button"
-            aria-label={copy.language}
-            title={copy.language}
-            onClick={() => setLocale((value) => (value === "en" ? "zh-CN" : "en"))}
-          >
-            <Languages size={16} />
-            <span>{locale === "en" ? "中" : "EN"}</span>
-          </button>
-          <button className="icon-button" type="button" aria-label={copy.settings}>
             <Settings2 size={17} />
           </button>
         </div>
@@ -775,6 +919,9 @@ function App() {
                 onChange={(event) => {
                   setPrinterCapabilities(null);
                   setSelectedPrinter(event.target.value);
+                  if (preferences.printerPreference === "last") {
+                    localStorage.setItem("pliflo-last-printer", event.target.value);
+                  }
                 }}
               >
                 {!printers.length && <option value="">{copy.noPrinters}</option>}
@@ -1139,6 +1286,161 @@ function App() {
                 </div>
               ))
           )}
+        </div>
+      )}
+
+      {settingsOpen && (
+        <div className="settings-drawer">
+          <div className="drawer-heading">
+            <div>
+              <h2>{copy.settings}</h2>
+              <span className="panel-caption">{copy.settingsCaption}</span>
+            </div>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label={copy.closeSettings}
+              onClick={() => setSettingsOpen(false)}
+            >
+              <X size={17} />
+            </button>
+          </div>
+
+          <div className="app-settings-section">
+            <strong>{copy.appearance}</strong>
+            <div className="setting-row wide-label">
+              <label>{copy.theme}</label>
+              <div className="segmented settings-segmented">
+                {(
+                  [
+                    ["system", copy.themeSystem],
+                    ["light", copy.themeLightLabel],
+                    ["dark", copy.themeDarkLabel],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={preferences.theme === value ? "active" : ""}
+                    onClick={() => setPreferences((current) => ({ ...current, theme: value }))}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="setting-row wide-label">
+              <label>{copy.languageLabel}</label>
+              <div className="segmented settings-segmented two">
+                <button
+                  type="button"
+                  className={locale === "zh-CN" ? "active" : ""}
+                  onClick={() => setLocale("zh-CN")}
+                >
+                  {copy.chinese}
+                </button>
+                <button
+                  type="button"
+                  className={locale === "en" ? "active" : ""}
+                  onClick={() => setLocale("en")}
+                >
+                  {copy.english}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="app-settings-section">
+            <strong>{copy.printingBehavior}</strong>
+            <div className="setting-row wide-label">
+              <label>{copy.printerPreference}</label>
+              <div className="select-shell compact">
+                <select
+                  value={preferences.printerPreference}
+                  onChange={(event) =>
+                    setPreferences((current) => ({
+                      ...current,
+                      printerPreference: event.target.value as AppPreferences["printerPreference"],
+                    }))
+                  }
+                >
+                  <option value="system">{copy.useSystemPrinter}</option>
+                  <option value="last">{copy.useLastPrinter}</option>
+                </select>
+                <ChevronDown size={14} />
+              </div>
+            </div>
+          </div>
+
+          <details className="settings-disclosure">
+            <summary>
+              <span>{copy.behavior}</span>
+              <ChevronDown size={15} />
+            </summary>
+            <div className="settings-disclosure-body">
+              <label className="toggle-row stacked-toggle">
+                <span>
+                  <strong>{copy.restoreBatch}</strong>
+                  <small>{copy.restoreBatchHint}</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={preferences.restoreBatch}
+                  onChange={(event) =>
+                    setPreferences((current) => ({
+                      ...current,
+                      restoreBatch: event.target.checked,
+                    }))
+                  }
+                />
+              </label>
+              <div className="setting-row wide-label">
+                <label>{copy.historyRetention}</label>
+                <div className="select-shell compact">
+                  <select
+                    value={preferences.historyRetention}
+                    onChange={(event) =>
+                      setPreferences((current) => ({
+                        ...current,
+                        historyRetention: event.target.value as AppPreferences["historyRetention"],
+                      }))
+                    }
+                  >
+                    <option value="session">{copy.historySession}</option>
+                    <option value="30d">{copy.history30d}</option>
+                    <option value="forever">{copy.historyForever}</option>
+                  </select>
+                  <ChevronDown size={14} />
+                </div>
+              </div>
+              <button
+                className="settings-text-button"
+                type="button"
+                onClick={() => {
+                  setItems((current) =>
+                    current.filter(
+                      (item) => !["completed", "cancelled", "failed"].includes(item.state),
+                    ),
+                  );
+                  localStorage.removeItem("pliflo-history");
+                }}
+              >
+                {copy.clearHistory}
+              </button>
+            </div>
+          </details>
+
+          <button
+            className="settings-reset"
+            type="button"
+            onClick={() => {
+              setPreferences(DEFAULT_PREFERENCES);
+              setLocale(navigator.language.startsWith("zh") ? "zh-CN" : "en");
+              localStorage.removeItem("pliflo-last-printer");
+            }}
+          >
+            <RotateCcw size={14} /> {copy.resetAppSettings}
+          </button>
         </div>
       )}
     </main>
