@@ -26,6 +26,256 @@
   color: var(--ink);
 }
 
+/* Theme and surface system */
+.app-shell {
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 14px;
+}
+
+.ghost-button,
+.icon-button,
+.language-button,
+.add-button,
+.search-row,
+.drop-zone,
+.drop-icon,
+.file-row,
+.pdf-icon,
+.job-state,
+.transport,
+.notice-bar,
+.select-shell,
+.scope-switch,
+.scope-switch button,
+.stepper,
+.segmented,
+.preset-card,
+.print-button,
+.secondary-action,
+.active-job,
+.history-row {
+  border-radius: var(--radius-sm);
+}
+
+.drop-zone,
+.preset-card,
+.notice-bar {
+  border-radius: var(--radius-md);
+}
+
+.language-button {
+  height: 32px;
+  min-width: 48px;
+  padding: 0 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--console-line-strong);
+  background: #1b1f1b;
+  color: #cbd1ca;
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.language-button:hover {
+  border-color: rgba(255, 255, 255, 0.26);
+  background: #242924;
+  color: #fff;
+}
+
+.app-shell[data-theme="dark"] .preview-panel {
+  background: #20241f;
+  color: #e8ece5;
+}
+
+.app-shell[data-theme="dark"] .preview-toolbar {
+  border-color: var(--console-line);
+  background: #1b1f1b;
+}
+
+.app-shell[data-theme="dark"] .surface-label,
+.app-shell[data-theme="dark"] .preview-empty,
+.app-shell[data-theme="dark"] .preview-footer {
+  color: #8f988e;
+}
+
+.app-shell[data-theme="dark"] .document-title strong {
+  color: #edf0e8;
+}
+
+.app-shell[data-theme="dark"] .preview-toolbar .icon-button {
+  border-color: var(--console-line-strong);
+  background: #242924;
+  color: #aeb6ad;
+}
+
+.app-shell[data-theme="dark"] .preview-stage {
+  background: #242925;
+}
+
+.app-shell[data-theme="dark"] .preview-stage::before {
+  border-color: rgba(255, 255, 255, 0.055);
+}
+
+.app-shell[data-theme="dark"] .preview-footer {
+  border-color: var(--console-line);
+  background: #1b1f1b;
+}
+
+.app-shell[data-theme="light"] {
+  --console: #eceee8;
+  --console-2: #f5f6f1;
+  --console-3: #e7eae3;
+  --console-line: rgba(31, 36, 31, 0.08);
+  --console-line-strong: rgba(31, 36, 31, 0.14);
+  --console-text: #242923;
+  --console-muted: #747c72;
+  --paper: #fbfbf7;
+  --paper-2: #eceee8;
+  --paper-line: rgba(31, 36, 31, 0.1);
+  --ink: #232823;
+  --muted: #70776d;
+  background: #eceee8;
+}
+
+.app-shell[data-theme="light"] .topbar {
+  color: #262b25;
+  background: #fafbf7;
+  border-color: var(--console-line-strong);
+}
+
+.app-shell[data-theme="light"] .brand-mark span {
+  background: #343a33;
+}
+
+.app-shell[data-theme="light"] .brand-mark span:nth-child(2) {
+  background: #96ca2e;
+}
+
+.app-shell[data-theme="light"] .brand-tag,
+.app-shell[data-theme="light"] .transport-item,
+.app-shell[data-theme="light"] .panel-caption {
+  color: #737b71;
+}
+
+.app-shell[data-theme="light"] .transport,
+.app-shell[data-theme="light"] .ghost-button,
+.app-shell[data-theme="light"] .icon-button,
+.app-shell[data-theme="light"] .language-button,
+.app-shell[data-theme="light"] .search-row,
+.app-shell[data-theme="light"] .drop-zone,
+.app-shell[data-theme="light"] .pdf-icon,
+.app-shell[data-theme="light"] .job-state,
+.app-shell[data-theme="light"] .select-shell.prominent,
+.app-shell[data-theme="light"] .scope-switch,
+.app-shell[data-theme="light"] .stepper,
+.app-shell[data-theme="light"] .select-shell.compact,
+.app-shell[data-theme="light"] .segmented,
+.app-shell[data-theme="light"] .preset-card,
+.app-shell[data-theme="light"] .secondary-action {
+  background: #eef0ea;
+  color: #4c554b;
+}
+
+.app-shell[data-theme="light"] .transport-item strong,
+.app-shell[data-theme="light"] .panel-heading h1,
+.app-shell[data-theme="light"] .panel-heading h2,
+.app-shell[data-theme="light"] .drawer-heading h2,
+.app-shell[data-theme="light"] .file-copy strong,
+.app-shell[data-theme="light"] .queue-summary strong,
+.app-shell[data-theme="light"] .select-shell select,
+.app-shell[data-theme="light"] .stepper span {
+  color: #262c25;
+}
+
+.app-shell[data-theme="light"] .ghost-button:hover,
+.app-shell[data-theme="light"] .icon-button:hover,
+.app-shell[data-theme="light"] .language-button:hover,
+.app-shell[data-theme="light"] .file-row:hover,
+.app-shell[data-theme="light"] .stepper button:hover {
+  background: #e2e6dd;
+  color: #171b17;
+}
+
+.app-shell[data-theme="light"] .file-row.selected,
+.app-shell[data-theme="light"] .scope-switch button.active,
+.app-shell[data-theme="light"] .segmented button.active {
+  background: #e5edd8;
+  color: #20261f;
+}
+
+.app-shell[data-theme="light"] .segmented button:hover {
+  color: #313831;
+}
+
+.app-shell[data-theme="light"] .search-row input {
+  color: #262c25;
+}
+
+.app-shell[data-theme="light"] .drop-zone strong,
+.app-shell[data-theme="light"] .printer-meta button:hover {
+  color: #30362f;
+}
+
+.app-shell[data-theme="light"] .queue-summary {
+  background: #eef0ea;
+}
+
+.app-shell[data-theme="light"] .preview-toolbar {
+  background: #f7f8f3;
+}
+
+.app-shell[data-theme="light"] .preview-stage {
+  background: #e3e6de;
+}
+
+.app-shell[data-theme="light"] .preview-footer {
+  background: #f3f4ef;
+}
+
+.app-shell[data-theme="light"] .print-actions,
+.app-shell[data-theme="light"] .setting-section {
+  border-color: var(--console-line);
+}
+
+.app-shell[data-theme="light"] .print-actions,
+.app-shell[data-theme="light"] .history-drawer {
+  background: #f7f8f3;
+  color: #262b25;
+}
+
+.app-shell[data-theme="light"] .print-actions {
+  box-shadow: 0 -14px 28px rgba(40, 45, 39, 0.05);
+}
+
+.app-shell[data-theme="light"] .submission-note > span {
+  box-shadow: inset 0 0 0 2px #f7f8f3;
+}
+
+.app-shell[data-theme="light"] .preset-card strong,
+.app-shell[data-theme="light"] .submission-note strong,
+.app-shell[data-theme="light"] .history-row strong {
+  color: #394038;
+}
+
+.app-shell[data-theme="light"] .print-button:disabled {
+  border-color: var(--console-line-strong);
+  background: #e4e7df;
+  color: #92998f;
+}
+
+.app-shell[data-theme="light"] .history-row:hover {
+  background: #e9ece5;
+}
+
+.app-shell[data-theme="light"] .notice-bar {
+  background: #f8f9f5;
+  color: #30362f;
+  border-color: var(--console-line-strong);
+}
+
 .topbar {
   height: 64px;
   padding: 0 18px 0 78px;

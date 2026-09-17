@@ -13,7 +13,9 @@ import {
   GripVertical,
   Layers3,
   LoaderCircle,
+  Languages,
   MoreHorizontal,
+  Moon,
   Pause,
   Play,
   Plus,
@@ -23,6 +25,7 @@ import {
   Search,
   Settings2,
   SlidersHorizontal,
+  Sun,
   Trash2,
   X,
 } from "lucide-react";
@@ -55,6 +58,8 @@ type QueueItem = PdfInfo & {
   error?: string;
 };
 type SubmitResult = { jobId: string; raw: string };
+type Theme = "dark" | "light";
+type Locale = "en" | "zh-CN";
 
 const DEFAULT_SETTINGS: PrintSettings = {
   copies: 1,
@@ -65,15 +70,170 @@ const DEFAULT_SETTINGS: PrintSettings = {
   scale: "fit",
 };
 
-const STATE_LABEL: Record<JobState, string> = {
-  queued: "Ready",
-  submitting: "Submitting",
-  submitted: "Submitted",
-  printing: "Printing",
-  completed: "Completed",
-  cancelled: "Cancelled",
-  failed: "Needs attention",
-};
+const COPY = {
+  en: {
+    ready: "Ready",
+    active: "Active",
+    done: "Done",
+    submitting: "Submitting",
+    submitted: "Submitted",
+    printing: "Printing",
+    completed: "Completed",
+    cancelled: "Cancelled",
+    attention: "Needs attention",
+    history: "History",
+    settings: "Settings",
+    queueStatus: "Queue status",
+    printQueue: "Print queue",
+    documentsInBatch: (count: number) => `${count} documents in this batch`,
+    addPdf: "Add PDF",
+    findBatch: "Find in this batch",
+    searchDocuments: "Search documents",
+    dropPdfs: "Drop PDFs here",
+    chooseMac: "or choose files from your Mac",
+    pages: (count: number) => `${count} pages`,
+    pagesUnknown: "Pages unknown",
+    inProgress: "In progress",
+    paperStage: "Paper stage",
+    noDocument: "No document selected",
+    remove: "Remove",
+    removePdf: "Remove selected PDF",
+    previewTitle: (name: string) => `Preview ${name}`,
+    previewEmpty: "Your selected PDF appears here.",
+    pdfDocument: "PDF document",
+    previewNote: "Preview only · print output follows printer capabilities",
+    printSetup: "Print setup",
+    setupCaption: "Tune batch defaults or this file",
+    reset: "Reset",
+    resetSettings: "Reset print settings",
+    printer: "Printer",
+    noPrinters: "No printers found",
+    defaultPrinter: "Default",
+    notConnected: "Not connected",
+    refresh: "Refresh",
+    batch: "Batch",
+    file: "File",
+    copies: "Copies",
+    decreaseCopies: "Decrease copies",
+    increaseCopies: "Increase copies",
+    paper: "Paper",
+    paperSize: "Paper size",
+    orientation: "Orientation",
+    auto: "Auto",
+    portrait: "Portrait",
+    landscape: "Landscape",
+    twoSided: "Two-sided",
+    twoSidedPrinting: "Two-sided printing",
+    off: "Off",
+    longEdge: "Long edge",
+    shortEdge: "Short edge",
+    color: "Color",
+    gray: "Gray",
+    scale: "Scale",
+    fit: "Fit",
+    officeStandard: "Office standard",
+    presetDetail: "A4 · Duplex · Fit",
+    savePreset: "Save preset",
+    submissionTitle: "System submission is tracked separately.",
+    submissionBody: "Completion appears only after macOS reports the job finished.",
+    resume: "Resume",
+    pause: "Pause",
+    printFiles: (count: number) => `Print ${count || ""} ${count === 1 ? "file" : "files"}`,
+    cancel: "Cancel",
+    printHistory: "Print history",
+    historyCaption: "Finished, cancelled & failed jobs",
+    closeHistory: "Close print history",
+    historyEmpty: "Finished jobs will collect here.",
+    selectPrinter: "Select a printer before starting the queue.",
+    addFilesError: (error: unknown) => `Could not add files: ${String(error)}`,
+    cancelError: (error: unknown) => `Cancel request failed: ${String(error)}`,
+    dragError: (error: unknown) => `Window drag failed: ${String(error)}`,
+    themeLight: "Switch to light theme",
+    themeDark: "Switch to dark theme",
+    language: "Switch language",
+  },
+  "zh-CN": {
+    ready: "待打印",
+    active: "进行中",
+    done: "已完成",
+    submitting: "提交中",
+    submitted: "已提交",
+    printing: "打印中",
+    completed: "已完成",
+    cancelled: "已取消",
+    attention: "需要处理",
+    history: "历史",
+    settings: "设置",
+    queueStatus: "队列状态",
+    printQueue: "打印队列",
+    documentsInBatch: (count: number) => `本批次 ${count} 个文档`,
+    addPdf: "添加 PDF",
+    findBatch: "搜索本批次",
+    searchDocuments: "搜索文档",
+    dropPdfs: "拖入 PDF 文件",
+    chooseMac: "或从 Mac 选择文件",
+    pages: (count: number) => `${count} 页`,
+    pagesUnknown: "页数未知",
+    inProgress: "进行中",
+    paperStage: "纸张预览",
+    noDocument: "未选择文档",
+    remove: "移除",
+    removePdf: "移除选中的 PDF",
+    previewTitle: (name: string) => `预览 ${name}`,
+    previewEmpty: "选择的 PDF 将显示在这里。",
+    pdfDocument: "PDF 文档",
+    previewNote: "仅供预览 · 实际输出以打印机能力为准",
+    printSetup: "打印设置",
+    setupCaption: "调整批次默认值或当前文件",
+    reset: "重置",
+    resetSettings: "重置打印设置",
+    printer: "打印机",
+    noPrinters: "未发现打印机",
+    defaultPrinter: "默认",
+    notConnected: "未连接",
+    refresh: "刷新",
+    batch: "批次",
+    file: "文件",
+    copies: "份数",
+    decreaseCopies: "减少份数",
+    increaseCopies: "增加份数",
+    paper: "纸张",
+    paperSize: "纸张尺寸",
+    orientation: "方向",
+    auto: "自动",
+    portrait: "纵向",
+    landscape: "横向",
+    twoSided: "双面打印",
+    twoSidedPrinting: "双面打印方式",
+    off: "关闭",
+    longEdge: "长边翻转",
+    shortEdge: "短边翻转",
+    color: "彩色",
+    gray: "灰度",
+    scale: "缩放",
+    fit: "适合页面",
+    officeStandard: "办公标准",
+    presetDetail: "A4 · 双面 · 适合页面",
+    savePreset: "保存预设",
+    submissionTitle: "系统提交与打印完成分开追踪。",
+    submissionBody: "仅在 macOS 报告任务完成后才会显示为已完成。",
+    resume: "继续",
+    pause: "暂停",
+    printFiles: (count: number) => `打印 ${count || ""} 个文件`,
+    cancel: "取消",
+    printHistory: "打印历史",
+    historyCaption: "已完成、已取消和失败的任务",
+    closeHistory: "关闭打印历史",
+    historyEmpty: "已结束的任务会显示在这里。",
+    selectPrinter: "开始队列前请先选择打印机。",
+    addFilesError: (error: unknown) => `无法添加文件：${String(error)}`,
+    cancelError: (error: unknown) => `取消任务失败：${String(error)}`,
+    dragError: (error: unknown) => `窗口拖动失败：${String(error)}`,
+    themeLight: "切换到亮色主题",
+    themeDark: "切换到暗色主题",
+    language: "切换语言",
+  },
+} as const;
 
 function formatBytes(bytes: number) {
   return bytes < 1024 * 1024
@@ -96,6 +256,16 @@ function StatusIcon({ state }: { state: JobState }) {
 }
 
 function App() {
+  const [theme, setTheme] = useState<Theme>(() => {
+    const stored = localStorage.getItem("pliflo-theme");
+    if (stored === "light" || stored === "dark") return stored;
+    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  });
+  const [locale, setLocale] = useState<Locale>(() =>
+    localStorage.getItem("pliflo-locale") === "zh-CN" || navigator.language.startsWith("zh")
+      ? "zh-CN"
+      : "en",
+  );
   const [items, setItems] = useState<QueueItem[]>([]);
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [selectedPrinter, setSelectedPrinter] = useState("");
@@ -106,6 +276,16 @@ function App() {
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const copy = COPY[locale];
+  const stateLabel: Record<JobState, string> = {
+    queued: copy.ready,
+    submitting: copy.submitting,
+    submitted: copy.submitted,
+    printing: copy.printing,
+    completed: copy.completed,
+    cancelled: copy.cancelled,
+    failed: copy.attention,
+  };
 
   const selected = items.find((item) => item.id === selectedId) ?? null;
   const pending = items.filter((item) => ["queued", "failed", "cancelled"].includes(item.state));
@@ -117,6 +297,15 @@ function App() {
     const query = search.trim().toLowerCase();
     return query ? items.filter((item) => item.name.toLowerCase().includes(query)) : items;
   }, [items, search]);
+
+  useEffect(() => {
+    localStorage.setItem("pliflo-theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem("pliflo-locale", locale);
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   const refreshPrinters = useCallback(async () => {
     try {
@@ -131,19 +320,22 @@ function App() {
     }
   }, []);
 
-  const addPaths = useCallback(async (paths: string[]) => {
-    const pdfPaths = paths.filter((path) => path.toLowerCase().endsWith(".pdf"));
-    if (!pdfPaths.length) return;
-    try {
-      const info = await invoke<PdfInfo[]>("inspect_pdfs", { paths: pdfPaths });
-      const fresh = info.map(createQueueItem);
-      setItems((current) => [...current, ...fresh]);
-      setSelectedId((current) => current ?? fresh[0]?.id ?? null);
-      setNotice(null);
-    } catch (error) {
-      setNotice(`Could not add files: ${String(error)}`);
-    }
-  }, []);
+  const addPaths = useCallback(
+    async (paths: string[]) => {
+      const pdfPaths = paths.filter((path) => path.toLowerCase().endsWith(".pdf"));
+      if (!pdfPaths.length) return;
+      try {
+        const info = await invoke<PdfInfo[]>("inspect_pdfs", { paths: pdfPaths });
+        const fresh = info.map(createQueueItem);
+        setItems((current) => [...current, ...fresh]);
+        setSelectedId((current) => current ?? fresh[0]?.id ?? null);
+        setNotice(null);
+      } catch (error) {
+        setNotice(copy.addFilesError(error));
+      }
+    },
+    [copy],
+  );
 
   // Printer discovery is an external OS synchronization and intentionally updates UI state.
   // oxlint-disable-next-line react/set-state-in-effect
@@ -218,7 +410,7 @@ function App() {
   }
 
   async function submitOne(item: QueueItem) {
-    if (!selectedPrinter) return setNotice("Select a printer before starting the queue.");
+    if (!selectedPrinter) return setNotice(copy.selectPrinter);
     setItems((current) =>
       current.map((candidate) =>
         candidate.id === item.id
@@ -264,7 +456,7 @@ function App() {
         ),
       );
     } catch (error) {
-      setNotice(`Cancel request failed: ${String(error)}`);
+      setNotice(copy.cancelError(error));
     }
   }
 
@@ -273,7 +465,7 @@ function App() {
     selected ? updateItemSettings(selected.id, patch) : applyBatchSettings(patch);
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" data-theme={theme}>
       <header
         className="topbar"
         data-tauri-drag-region
@@ -282,7 +474,7 @@ function App() {
           if ((event.target as HTMLElement).closest("button")) return;
           void getCurrentWindow()
             .startDragging()
-            .catch((error) => setNotice(`Window drag failed: ${String(error)}`));
+            .catch((error) => setNotice(copy.dragError(error)));
         }}
       >
         <div className="brand-lockup">
@@ -294,20 +486,20 @@ function App() {
           <span className="brand-name">Pliflo</span>
           <span className="brand-tag">PRINT FLOW</span>
         </div>
-        <div className="transport" aria-label="Queue status">
+        <div className="transport" aria-label={copy.queueStatus}>
           <div className="transport-item">
             <span className="transport-light ready" />
-            <span>Ready</span>
+            <span>{copy.ready}</span>
             <strong>{pending.length}</strong>
           </div>
           <div className="transport-item">
             <span className="transport-light active" />
-            <span>Active</span>
+            <span>{copy.active}</span>
             <strong>{active.length}</strong>
           </div>
           <div className="transport-item">
             <span className="transport-light done" />
-            <span>Done</span>
+            <span>{copy.done}</span>
             <strong>{completed.length}</strong>
           </div>
         </div>
@@ -317,9 +509,28 @@ function App() {
             type="button"
             onClick={() => setHistoryOpen((value) => !value)}
           >
-            <Archive size={16} /> History
+            <Archive size={16} /> {copy.history}
           </button>
-          <button className="icon-button" type="button" aria-label="Settings">
+          <button
+            className="icon-button"
+            type="button"
+            aria-label={theme === "dark" ? copy.themeLight : copy.themeDark}
+            title={theme === "dark" ? copy.themeLight : copy.themeDark}
+            onClick={() => setTheme((value) => (value === "dark" ? "light" : "dark"))}
+          >
+            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+          <button
+            className="language-button"
+            type="button"
+            aria-label={copy.language}
+            title={copy.language}
+            onClick={() => setLocale((value) => (value === "en" ? "zh-CN" : "en"))}
+          >
+            <Languages size={16} />
+            <span>{locale === "en" ? "中" : "EN"}</span>
+          </button>
+          <button className="icon-button" type="button" aria-label={copy.settings}>
             <Settings2 size={17} />
           </button>
         </div>
@@ -339,11 +550,11 @@ function App() {
         <aside className="queue-panel">
           <div className="panel-heading">
             <div>
-              <h1>Print queue</h1>
-              <span className="panel-caption">{items.length} documents in this batch</span>
+              <h1>{copy.printQueue}</h1>
+              <span className="panel-caption">{copy.documentsInBatch(items.length)}</span>
             </div>
             <button className="add-button" type="button" onClick={() => void chooseFiles()}>
-              <Plus size={17} /> Add PDF
+              <Plus size={17} /> {copy.addPdf}
             </button>
           </div>
           <div className="search-row">
@@ -353,8 +564,8 @@ function App() {
               autoComplete="off"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Find in this batch"
-              aria-label="Search documents"
+              placeholder={copy.findBatch}
+              aria-label={copy.searchDocuments}
             />
             <span>{items.length}</span>
           </div>
@@ -364,8 +575,8 @@ function App() {
                 <div className="drop-icon">
                   <FilePlus2 size={24} />
                 </div>
-                <strong>Drop PDFs here</strong>
-                <span>or choose files from your Mac</span>
+                <strong>{copy.dropPdfs}</strong>
+                <span>{copy.chooseMac}</span>
               </button>
             ) : (
               visibleItems.map((item, index) => (
@@ -383,13 +594,13 @@ function App() {
                   <div className="file-copy">
                     <strong>{item.name}</strong>
                     <span>
-                      {item.pages ? `${item.pages} pages` : "Pages unknown"} ·{" "}
+                      {item.pages ? copy.pages(item.pages) : copy.pagesUnknown} ·{" "}
                       {formatBytes(item.sizeBytes)}
                     </span>
                   </div>
                   <div className={`job-state state-${item.state}`}>
                     <StatusIcon state={item.state} />
-                    <span>{STATE_LABEL[item.state]}</span>
+                    <span>{stateLabel[item.state]}</span>
                   </div>
                   <MoreHorizontal size={16} />
                 </button>
@@ -398,15 +609,15 @@ function App() {
           </div>
           <div className="queue-summary">
             <div>
-              <span>Ready</span>
+              <span>{copy.ready}</span>
               <strong>{pending.length}</strong>
             </div>
             <div>
-              <span>In progress</span>
+              <span>{copy.inProgress}</span>
               <strong>{active.length}</strong>
             </div>
             <div>
-              <span>Done</span>
+              <span>{copy.done}</span>
               <strong>{completed.length}</strong>
             </div>
           </div>
@@ -415,15 +626,15 @@ function App() {
         <section className="preview-panel">
           <div className="preview-toolbar">
             <div className="document-title">
-              <span className="surface-label">Paper stage</span>
-              <strong>{selected?.name ?? "No document selected"}</strong>
+              <span className="surface-label">{copy.paperStage}</span>
+              <strong>{selected?.name ?? copy.noDocument}</strong>
             </div>
             {selected && (
               <button
                 className="icon-button danger-hover"
                 type="button"
-                title="Remove"
-                aria-label="Remove selected PDF"
+                title={copy.remove}
+                aria-label={copy.removePdf}
                 onClick={() => {
                   setItems((current) => current.filter((item) => item.id !== selected.id));
                   setSelectedId(null);
@@ -437,7 +648,7 @@ function App() {
             {selected ? (
               <iframe
                 className="pdf-preview"
-                title={`Preview ${selected.name}`}
+                title={copy.previewTitle(selected.name)}
                 src={convertFileSrc(selected.path)}
               />
             ) : (
@@ -447,14 +658,14 @@ function App() {
                   <span />
                   <span />
                 </div>
-                <p>Your selected PDF appears here.</p>
+                <p>{copy.previewEmpty}</p>
               </div>
             )}
           </div>
           {selected && (
             <div className="preview-footer">
-              <span>{selected.pages ? `${selected.pages} pages` : "PDF document"}</span>
-              <span>Preview only · print output follows printer capabilities</span>
+              <span>{selected.pages ? copy.pages(selected.pages) : copy.pdfDocument}</span>
+              <span>{copy.previewNote}</span>
             </div>
           )}
         </section>
@@ -462,8 +673,8 @@ function App() {
         <aside className="settings-panel">
           <div className="panel-heading">
             <div>
-              <h2>Print setup</h2>
-              <span className="panel-caption">Tune batch defaults or this file</span>
+              <h2>{copy.printSetup}</h2>
+              <span className="panel-caption">{copy.setupCaption}</span>
             </div>
             <button
               className="icon-button"
@@ -472,26 +683,26 @@ function App() {
                 setBatchSettings({ ...DEFAULT_SETTINGS });
                 if (selected) updateItemSettings(selected.id, DEFAULT_SETTINGS);
               }}
-              title="Reset"
-              aria-label="Reset print settings"
+              title={copy.reset}
+              aria-label={copy.resetSettings}
             >
               <RotateCcw size={15} />
             </button>
           </div>
           <div className="setting-section printer-section">
-            <label>Printer</label>
+            <label>{copy.printer}</label>
             <div className="select-shell prominent">
               <Printer size={17} />
               <select
-                aria-label="Printer"
+                aria-label={copy.printer}
                 value={selectedPrinter}
                 onChange={(event) => setSelectedPrinter(event.target.value)}
               >
-                {!printers.length && <option value="">No printers found</option>}
+                {!printers.length && <option value="">{copy.noPrinters}</option>}
                 {printers.map((printer) => (
                   <option key={printer.name} value={printer.name}>
                     {printer.name}
-                    {printer.isDefault ? " — Default" : ""}
+                    {printer.isDefault ? ` — ${copy.defaultPrinter}` : ""}
                   </option>
                 ))}
               </select>
@@ -501,10 +712,10 @@ function App() {
               <span className="online-dot" />
               <span>
                 {printers.find((printer) => printer.name === selectedPrinter)?.state ??
-                  "Not connected"}
+                  copy.notConnected}
               </span>
               <button type="button" onClick={() => void refreshPrinters()}>
-                <RefreshCw size={13} /> Refresh
+                <RefreshCw size={13} /> {copy.refresh}
               </button>
             </div>
           </div>
@@ -514,7 +725,7 @@ function App() {
               type="button"
               onClick={() => setSelectedId(null)}
             >
-              <Layers3 size={14} /> Batch
+              <Layers3 size={14} /> {copy.batch}
             </button>
             <button
               className={selected ? "active" : ""}
@@ -522,16 +733,16 @@ function App() {
               disabled={!items.length}
               onClick={() => setSelectedId(items[0]?.id ?? null)}
             >
-              <FileText size={14} /> File
+              <FileText size={14} /> {copy.file}
             </button>
           </div>
           <div className="settings-scroll">
             <div className="setting-section">
               <div className="setting-row">
-                <label>Copies</label>
+                <label>{copy.copies}</label>
                 <div className="stepper">
                   <button
-                    aria-label="Decrease copies"
+                    aria-label={copy.decreaseCopies}
                     type="button"
                     onClick={() => changeSetting({ copies: Math.max(1, settings.copies - 1) })}
                   >
@@ -539,7 +750,7 @@ function App() {
                   </button>
                   <span>{settings.copies}</span>
                   <button
-                    aria-label="Increase copies"
+                    aria-label={copy.increaseCopies}
                     type="button"
                     onClick={() => changeSetting({ copies: Math.min(99, settings.copies + 1) })}
                   >
@@ -548,10 +759,10 @@ function App() {
                 </div>
               </div>
               <div className="setting-row">
-                <label>Paper</label>
+                <label>{copy.paper}</label>
                 <div className="select-shell compact">
                   <select
-                    aria-label="Paper size"
+                    aria-label={copy.paperSize}
                     value={settings.media}
                     onChange={(event) => changeSetting({ media: event.target.value })}
                   >
@@ -563,85 +774,85 @@ function App() {
                 </div>
               </div>
               <div className="setting-row">
-                <label>Orientation</label>
+                <label>{copy.orientation}</label>
                 <div className="segmented">
                   <button
                     className={settings.orientation === "auto" ? "active" : ""}
                     type="button"
                     onClick={() => changeSetting({ orientation: "auto" })}
                   >
-                    Auto
+                    {copy.auto}
                   </button>
                   <button
                     className={settings.orientation === "portrait" ? "active" : ""}
                     type="button"
                     onClick={() => changeSetting({ orientation: "portrait" })}
                   >
-                    Portrait
+                    {copy.portrait}
                   </button>
                   <button
                     className={settings.orientation === "landscape" ? "active" : ""}
                     type="button"
                     onClick={() => changeSetting({ orientation: "landscape" })}
                   >
-                    Landscape
+                    {copy.landscape}
                   </button>
                 </div>
               </div>
             </div>
             <div className="setting-section">
               <div className="setting-row">
-                <label>Two-sided</label>
+                <label>{copy.twoSided}</label>
                 <div className="select-shell compact">
                   <select
-                    aria-label="Two-sided printing"
+                    aria-label={copy.twoSidedPrinting}
                     value={settings.duplex}
                     onChange={(event) =>
                       changeSetting({ duplex: event.target.value as PrintSettings["duplex"] })
                     }
                   >
-                    <option value="none">Off</option>
-                    <option value="long">Long edge</option>
-                    <option value="short">Short edge</option>
+                    <option value="none">{copy.off}</option>
+                    <option value="long">{copy.longEdge}</option>
+                    <option value="short">{copy.shortEdge}</option>
                   </select>
                   <ChevronDown size={14} />
                 </div>
               </div>
               <div className="setting-row">
-                <label>Color</label>
+                <label>{copy.color}</label>
                 <div className="segmented">
                   <button
                     className={settings.color === "auto" ? "active" : ""}
                     type="button"
                     onClick={() => changeSetting({ color: "auto" })}
                   >
-                    Auto
+                    {copy.auto}
                   </button>
                   <button
                     className={settings.color === "color" ? "active" : ""}
                     type="button"
                     onClick={() => changeSetting({ color: "color" })}
                   >
-                    Color
+                    {copy.color}
                   </button>
                   <button
                     className={settings.color === "grayscale" ? "active" : ""}
                     type="button"
                     onClick={() => changeSetting({ color: "grayscale" })}
                   >
-                    Gray
+                    {copy.gray}
                   </button>
                 </div>
               </div>
               <div className="setting-row">
-                <label>Scale</label>
+                <label>{copy.scale}</label>
                 <div className="segmented">
                   <button
                     className={settings.scale === "fit" ? "active" : ""}
                     type="button"
                     onClick={() => changeSetting({ scale: "fit" })}
                   >
-                    Fit
+                    {copy.fit}
                   </button>
                   <button
                     className={settings.scale === "actual" ? "active" : ""}
@@ -657,19 +868,18 @@ function App() {
               <div>
                 <SlidersHorizontal size={15} />
                 <span>
-                  <strong>Office standard</strong>
-                  <small>A4 · Duplex · Fit</small>
+                  <strong>{copy.officeStandard}</strong>
+                  <small>{copy.presetDetail}</small>
                 </span>
               </div>
-              <button type="button">Save preset</button>
+              <button type="button">{copy.savePreset}</button>
             </div>
           </div>
           <div className="print-actions">
             <div className="submission-note">
               <span />
               <p>
-                <strong>System submission is tracked separately.</strong> Completion appears only
-                after macOS reports the job finished.
+                <strong>{copy.submissionTitle}</strong> {copy.submissionBody}
               </p>
             </div>
             <div className="action-row">
@@ -680,7 +890,7 @@ function App() {
                   onClick={() => setQueuePaused((value) => !value)}
                 >
                   {queuePaused ? <Play size={16} /> : <Pause size={16} />}
-                  {queuePaused ? "Resume" : "Pause"}
+                  {queuePaused ? copy.resume : copy.pause}
                 </button>
               )}
               <button
@@ -689,8 +899,7 @@ function App() {
                 disabled={!pending.length || !selectedPrinter}
                 onClick={() => void startQueue()}
               >
-                <Printer size={17} /> Print {pending.length || ""}{" "}
-                {pending.length === 1 ? "file" : "files"}
+                <Printer size={17} /> {copy.printFiles(pending.length)}
               </button>
             </div>
             {active.map((item) => (
@@ -703,7 +912,7 @@ function App() {
                 <span>
                   <StatusIcon state={item.state} /> {item.name}
                 </span>
-                <small>Cancel</small>
+                <small>{copy.cancel}</small>
               </button>
             ))}
           </div>
@@ -714,20 +923,20 @@ function App() {
         <div className="history-drawer">
           <div className="drawer-heading">
             <div>
-              <h2>Print history</h2>
-              <span className="panel-caption">Finished, cancelled & failed jobs</span>
+              <h2>{copy.printHistory}</h2>
+              <span className="panel-caption">{copy.historyCaption}</span>
             </div>
             <button
               className="icon-button"
               type="button"
-              aria-label="Close print history"
+              aria-label={copy.closeHistory}
               onClick={() => setHistoryOpen(false)}
             >
               <X size={17} />
             </button>
           </div>
           {!items.some((item) => ["completed", "cancelled", "failed"].includes(item.state)) ? (
-            <div className="drawer-empty">Finished jobs will collect here.</div>
+            <div className="drawer-empty">{copy.historyEmpty}</div>
           ) : (
             items
               .filter((item) => ["completed", "cancelled", "failed"].includes(item.state))
@@ -737,7 +946,7 @@ function App() {
                   <span>
                     <strong>{item.name}</strong>
                     <small>
-                      {STATE_LABEL[item.state]}
+                      {stateLabel[item.state]}
                       {item.systemJobId ? ` · ${item.systemJobId}` : ""}
                     </small>
                   </span>
