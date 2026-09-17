@@ -1,193 +1,45 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
-  Archive,
-  Check,
   ChevronDown,
   CircleAlert,
-  Clock3,
-  FilePlus2,
   FileText,
-  GripVertical,
   Layers3,
-  LoaderCircle,
-  MoreHorizontal,
   Pause,
   Play,
-  Plus,
   Printer,
   RefreshCw,
   RotateCcw,
-  Search,
-  Settings2,
   SlidersHorizontal,
-  Trash2,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import "./App.css";
-
-type PdfInfo = { path: string; name: string; sizeBytes: number; pages: number | null };
-type PrinterInfo = { name: string; isDefault: boolean; state: string };
-type PrinterOption = { value: string; label: string; isDefault: boolean };
-type PrinterCapabilities = {
-  media: PrinterOption[];
-  trays: PrinterOption[];
-  qualities: PrinterOption[];
-  supportsDuplex: boolean;
-  supportsColor: boolean;
-};
-type JobState =
-  | "queued"
-  | "submitting"
-  | "submitted"
-  | "printing"
-  | "completed"
-  | "cancelled"
-  | "failed";
-type PrintSettings = {
-  copies: number;
-  duplex: "none" | "long" | "short";
-  color: "auto" | "color" | "grayscale";
-  orientation: "auto" | "portrait" | "landscape";
-  media: string;
-  scale: "fit" | "actual";
-  pageRange: string;
-  pagesPerSheet: 1 | 2 | 4 | 6 | 9 | 16;
-  reverse: boolean;
-  pageSet: "all" | "odd" | "even";
-  tray: string;
-  quality: "printer" | "draft" | "normal" | "high";
-};
-type QueueItem = PdfInfo & {
-  id: string;
-  settings: PrintSettings;
-  state: JobState;
-  systemJobId?: string;
-  error?: string;
-  finishedAt?: number;
-};
-type SubmitResult = { jobId: string; raw: string };
-type Theme = "dark" | "light";
-type ThemePreference = "system" | Theme;
-type Locale = "en" | "zh-CN";
-type AppPreferences = {
-  theme: ThemePreference;
-  printerPreference: "system" | "last";
-  restoreBatch: boolean;
-  historyRetention: "session" | "30d" | "forever";
-};
-
-const DEFAULT_SETTINGS: PrintSettings = {
-  copies: 1,
-  duplex: "long",
-  color: "auto",
-  orientation: "auto",
-  media: "A4",
-  scale: "fit",
-  pageRange: "",
-  pagesPerSheet: 1,
-  reverse: false,
-  pageSet: "all",
-  tray: "",
-  quality: "printer",
-};
-
-const DEFAULT_PREFERENCES: AppPreferences = {
-  theme: "system",
-  printerPreference: "system",
-  restoreBatch: true,
-  historyRetention: "30d",
-};
-
-function loadPreferences(): AppPreferences {
-  try {
-    const parsed = JSON.parse(
-      localStorage.getItem("pliflo-preferences") ?? "{}",
-    ) as Partial<AppPreferences>;
-    const legacyTheme = localStorage.getItem("pliflo-theme");
-    return {
-      theme:
-        parsed.theme === "system" || parsed.theme === "light" || parsed.theme === "dark"
-          ? parsed.theme
-          : legacyTheme === "light" || legacyTheme === "dark"
-            ? legacyTheme
-            : DEFAULT_PREFERENCES.theme,
-      printerPreference:
-        parsed.printerPreference === "last" ? "last" : DEFAULT_PREFERENCES.printerPreference,
-      restoreBatch:
-        typeof parsed.restoreBatch === "boolean"
-          ? parsed.restoreBatch
-          : DEFAULT_PREFERENCES.restoreBatch,
-      historyRetention:
-        parsed.historyRetention === "session" ||
-        parsed.historyRetention === "30d" ||
-        parsed.historyRetention === "forever"
-          ? parsed.historyRetention
-          : DEFAULT_PREFERENCES.historyRetention,
-    };
-  } catch {
-    return DEFAULT_PREFERENCES;
-  }
-}
-
-function parseStoredItems(key: string) {
-  try {
-    const value = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown;
-    return Array.isArray(value) ? (value as QueueItem[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function loadStoredBatch(preferences: AppPreferences): QueueItem[] {
-  if (!preferences.restoreBatch) return [];
-
-  return parseStoredItems("pliflo-batch").map((item) => {
-    if (item.state === "submitted" || item.state === "printing") {
-      return item.systemJobId
-        ? { ...item, error: undefined, finishedAt: undefined }
-        : {
-            ...item,
-            state: "failed" as const,
-            error: "Submission state could not be restored because no system job ID was recorded.",
-            finishedAt: Date.now(),
-          };
-    }
-    if (item.state === "submitting") {
-      return {
-        ...item,
-        state: "failed" as const,
-        error:
-          "Submission was interrupted before a system job ID was recorded. Review before retrying.",
-        finishedAt: Date.now(),
-      };
-    }
-    return {
-      ...item,
-      state: "queued" as const,
-      systemJobId: undefined,
-      error: undefined,
-      finishedAt: undefined,
-    };
-  });
-}
-
-function loadStoredHistory(preferences: AppPreferences): QueueItem[] {
-  return preferences.historyRetention === "session" ? [] : parseStoredItems("pliflo-history");
-}
-
-function recoverStoredJobId(error?: string) {
-  if (!error?.includes("unrecognized job id")) return null;
-  return (
-    error.match(/[A-Za-z0-9_.][A-Za-z0-9_.-]*-\d+/g)?.find((candidate) => {
-      const suffix = candidate.slice(candidate.lastIndexOf("-") + 1);
-      return suffix.length > 0 && /^\d+$/.test(suffix);
-    }) ?? null
-  );
-}
+import { DEFAULT_PREFERENCES, DEFAULT_SETTINGS } from "./app/constants";
+import type {
+  AppPreferences,
+  JobState,
+  Locale,
+  PdfInfo,
+  PrinterCapabilities,
+  PrinterInfo,
+  PrintSettings,
+  QueueItem,
+  SubmitResult,
+  Theme,
+} from "./app/types";
+import "./styles/app.css";
+import { AppTopbar } from "./components/AppTopbar";
+import { PdfPreviewPanel } from "./components/PdfPreviewPanel";
+import { QueuePanel } from "./components/QueuePanel";
+import { StatusIcon } from "./components/StatusIcon";
+import { createQueueItem, estimatePrintUsage, supportsPrinterChoice } from "./lib/print";
+import {
+  loadPreferences,
+  loadStoredBatch,
+  loadStoredHistory,
+  recoverStoredJobId,
+} from "./lib/storage";
 
 const COPY = {
   en: {
@@ -446,93 +298,6 @@ const COPY = {
     language: "切换语言",
   },
 } as const;
-
-function formatBytes(bytes: number) {
-  return bytes < 1024 * 1024
-    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
-    : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function createQueueItem(pdf: PdfInfo): QueueItem {
-  return { ...pdf, id: crypto.randomUUID(), settings: { ...DEFAULT_SETTINGS }, state: "queued" };
-}
-
-function countPrintableSides(item: QueueItem) {
-  if (!item.pages) return null;
-
-  // CUPS page ranges address output pages. number-up groups document pages first,
-  // so range and odd/even filtering must use the resulting output-page indexes.
-  const outputPages = Math.ceil(item.pages / item.settings.pagesPerSheet);
-  const pageNumbers = new Set<number>();
-  const range = item.settings.pageRange.trim();
-  if (!range) {
-    for (let page = 1; page <= outputPages; page += 1) pageNumbers.add(page);
-  } else {
-    for (const rawPart of range.split(",")) {
-      const part = rawPart.trim();
-      if (!part) return null;
-      const single = part.match(/^(\d+)$/);
-      const interval = part.match(/^(\d+)-(\d+)$/);
-      if (single) {
-        const page = Number(single[1]);
-        if (page < 1) return null;
-        if (page <= outputPages) pageNumbers.add(page);
-        continue;
-      }
-      if (!interval) return null;
-      const start = Number(interval[1]);
-      const end = Number(interval[2]);
-      if (start < 1 || end < 1 || start > end) return null;
-      for (let page = start; page <= Math.min(outputPages, end); page += 1) {
-        pageNumbers.add(page);
-      }
-    }
-  }
-
-  return [...pageNumbers].filter((page) => {
-    if (item.settings.pageSet === "odd") return page % 2 === 1;
-    if (item.settings.pageSet === "even") return page % 2 === 0;
-    return true;
-  }).length;
-}
-
-function estimatePrintUsage(queue: QueueItem[], capabilities: PrinterCapabilities | null) {
-  let printedPages = 0;
-  let sheets = 0;
-  let unknownItems = 0;
-
-  for (const item of queue) {
-    const sidesPerCopy = countPrintableSides(item);
-    if (sidesPerCopy === null) {
-      unknownItems += 1;
-      continue;
-    }
-    const copies = Math.max(1, item.settings.copies);
-    printedPages += sidesPerCopy * copies;
-    const effectiveDuplex =
-      capabilities && !capabilities.supportsDuplex ? "none" : item.settings.duplex;
-    const sheetsPerCopy = effectiveDuplex === "none" ? sidesPerCopy : Math.ceil(sidesPerCopy / 2);
-    sheets += sheetsPerCopy * copies;
-  }
-
-  return { printedPages, sheets, unknownItems };
-}
-
-function supportsPrinterChoice(options: PrinterOption[], candidates: string[]) {
-  return options.some((option) =>
-    candidates.some((candidate) => option.value.toLowerCase() === candidate.toLowerCase()),
-  );
-}
-
-function StatusIcon({ state }: { state: JobState }) {
-  if (state === "completed") return <Check size={14} />;
-  if (state === "failed") return <CircleAlert size={14} />;
-  if (state === "submitting" || state === "printing")
-    return <LoaderCircle className="spin" size={14} />;
-  if (state === "cancelled") return <X size={14} />;
-  if (state === "submitted") return <Clock3 size={14} />;
-  return <span className="status-dot" />;
-}
 
 function App() {
   const [preferences, setPreferences] = useState<AppPreferences>(loadPreferences);
@@ -901,69 +666,22 @@ function App() {
     selected ? updateItemSettings(selected.id, patch) : applyBatchSettings(patch);
 
   return (
-    <main className="app-shell" data-theme={theme}>
-      <header
-        className="topbar"
-        data-tauri-drag-region
-        onMouseDown={(event) => {
-          if (event.button !== 0) return;
-          if ((event.target as HTMLElement).closest("button")) return;
-          void getCurrentWindow()
-            .startDragging()
-            .catch((error) => setNotice(copy.dragError(error)));
+    <main className="app-shell flex h-full min-h-0 flex-col" data-theme={theme}>
+      <AppTopbar
+        labels={copy}
+        pendingCount={pending.length}
+        activeCount={active.length}
+        completedCount={completed.length}
+        onDragError={(error) => setNotice(copy.dragError(error))}
+        onToggleHistory={() => {
+          setSettingsOpen(false);
+          setHistoryOpen((value) => !value);
         }}
-      >
-        <div className="brand-lockup">
-          <div className="brand-mark" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </div>
-          <span className="brand-name">Pliflo</span>
-          <span className="brand-tag">PRINT FLOW</span>
-        </div>
-        <div className="transport" aria-label={copy.queueStatus}>
-          <div className="transport-item">
-            <span className="transport-light ready" />
-            <span>{copy.ready}</span>
-            <strong>{pending.length}</strong>
-          </div>
-          <div className="transport-item">
-            <span className="transport-light active" />
-            <span>{copy.active}</span>
-            <strong>{active.length}</strong>
-          </div>
-          <div className="transport-item">
-            <span className="transport-light done" />
-            <span>{copy.done}</span>
-            <strong>{completed.length}</strong>
-          </div>
-        </div>
-        <div className="topbar-actions">
-          <button
-            className="ghost-button"
-            type="button"
-            onClick={() => {
-              setSettingsOpen(false);
-              setHistoryOpen((value) => !value);
-            }}
-          >
-            <Archive size={16} /> {copy.history}
-          </button>
-          <button
-            className="icon-button"
-            type="button"
-            aria-label={copy.settings}
-            title={copy.settings}
-            onClick={() => {
-              setHistoryOpen(false);
-              setSettingsOpen((value) => !value);
-            }}
-          >
-            <Settings2 size={17} />
-          </button>
-        </div>
-      </header>
+        onToggleSettings={() => {
+          setHistoryOpen(false);
+          setSettingsOpen((value) => !value);
+        }}
+      />
 
       {notice && (
         <div className="notice-bar" aria-live="polite">
@@ -975,134 +693,32 @@ function App() {
         </div>
       )}
 
-      <section className="workspace">
-        <aside className="queue-panel">
-          <div className="panel-heading">
-            <div>
-              <h1>{copy.printQueue}</h1>
-              <span className="panel-caption">{copy.documentsInBatch(items.length)}</span>
-            </div>
-            <button className="add-button" type="button" onClick={() => void chooseFiles()}>
-              <Plus size={17} /> {copy.addPdf}
-            </button>
-          </div>
-          <div className="search-row">
-            <Search size={15} />
-            <input
-              name="queue-search"
-              autoComplete="off"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={copy.findBatch}
-              aria-label={copy.searchDocuments}
-            />
-            <span>{items.length}</span>
-          </div>
-          <div className={`file-list ${isDragging ? "drag-active" : ""}`}>
-            {!items.length ? (
-              <button className="drop-zone" type="button" onClick={() => void chooseFiles()}>
-                <div className="drop-icon">
-                  <FilePlus2 size={24} />
-                </div>
-                <strong>{copy.dropPdfs}</strong>
-                <span>{copy.chooseMac}</span>
-              </button>
-            ) : (
-              visibleItems.map((item, index) => (
-                <button
-                  className={`file-row ${selected?.id === item.id ? "selected" : ""}`}
-                  key={item.id}
-                  type="button"
-                  onClick={() => setSelectedId(item.id)}
-                >
-                  <GripVertical className="drag-handle" size={15} />
-                  <div className="file-index">{String(index + 1).padStart(2, "0")}</div>
-                  <div className="pdf-icon">
-                    <FileText size={17} />
-                  </div>
-                  <div className="file-copy">
-                    <strong>{item.name}</strong>
-                    <span
-                      className={item.state === "failed" && item.error ? "file-error" : undefined}
-                    >
-                      {item.state === "failed" && item.error
-                        ? item.error
-                        : `${item.pages ? copy.pages(item.pages) : copy.pagesUnknown} · ${formatBytes(item.sizeBytes)}`}
-                    </span>
-                  </div>
-                  <div className={`job-state state-${item.state}`}>
-                    <StatusIcon state={item.state} />
-                    <span>{stateLabel[item.state]}</span>
-                  </div>
-                  <MoreHorizontal size={16} />
-                </button>
-              ))
-            )}
-          </div>
-          <div className="queue-summary">
-            <div>
-              <span>{copy.ready}</span>
-              <strong>{pending.length}</strong>
-            </div>
-            <div>
-              <span>{copy.inProgress}</span>
-              <strong>{active.length}</strong>
-            </div>
-            <div>
-              <span>{copy.done}</span>
-              <strong>{completed.length}</strong>
-            </div>
-          </div>
-        </aside>
+      <section className="workspace min-h-0 flex-1">
+        <QueuePanel
+          items={items}
+          visibleItems={visibleItems}
+          selectedId={selected?.id ?? null}
+          search={search}
+          isDragging={isDragging}
+          pendingCount={pending.length}
+          activeCount={active.length}
+          completedCount={completed.length}
+          stateLabel={stateLabel}
+          labels={copy}
+          onChooseFiles={() => void chooseFiles()}
+          onSearchChange={setSearch}
+          onSelect={setSelectedId}
+        />
 
-        <section className="preview-panel">
-          <div className="preview-toolbar">
-            <div className="document-title">
-              <span className="surface-label">{copy.paperStage}</span>
-              <strong>{selected?.name ?? copy.noDocument}</strong>
-            </div>
-            {selected &&
-              !queueRunning &&
-              !["submitting", "submitted", "printing"].includes(selected.state) && (
-                <button
-                  className="icon-button danger-hover"
-                  type="button"
-                  title={copy.remove}
-                  aria-label={copy.removePdf}
-                  onClick={() => {
-                    setItems((current) => current.filter((item) => item.id !== selected.id));
-                    setSelectedId(null);
-                  }}
-                >
-                  <Trash2 size={15} />
-                </button>
-              )}
-          </div>
-          <div className="preview-stage">
-            {selected ? (
-              <iframe
-                className="pdf-preview"
-                title={copy.previewTitle(selected.name)}
-                src={convertFileSrc(selected.path)}
-              />
-            ) : (
-              <div className="preview-empty">
-                <div className="preview-sheet">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-                <p>{copy.previewEmpty}</p>
-              </div>
-            )}
-          </div>
-          {selected && (
-            <div className="preview-footer">
-              <span>{selected.pages ? copy.pages(selected.pages) : copy.pdfDocument}</span>
-              <span>{copy.previewNote}</span>
-            </div>
-          )}
-        </section>
+        <PdfPreviewPanel
+          selected={selected}
+          queueRunning={queueRunning}
+          labels={copy}
+          onRemove={(id) => {
+            setItems((current) => current.filter((item) => item.id !== id));
+            setSelectedId(null);
+          }}
+        />
 
         <aside className="settings-panel">
           <div className="panel-heading">

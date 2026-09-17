@@ -1,4 +1,5 @@
 import react from "@vitejs/plugin-react";
+import UnoCSS from "@unocss/vite";
 import { defineConfig, lazyPlugins } from "vite-plus";
 
 // https://vite.dev/config/
@@ -35,5 +36,5 @@ export default defineConfig({
       },
     ],
   },
-  plugins: lazyPlugins(() => [react()]),
+  plugins: lazyPlugins(() => [UnoCSS(), react()]),
 });

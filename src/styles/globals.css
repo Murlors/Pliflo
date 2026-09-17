@@ -7,24 +7,17 @@
     "SF Pro Text",
     "Segoe UI",
     sans-serif;
-  color: #1f211d;
+  color: var(--ink);
   background: #eeefe9;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --ink: #1f211d;
-  --muted: #777b70;
-  --line: rgba(42, 45, 38, 0.12);
-  --line-strong: rgba(42, 45, 38, 0.2);
-  --paper: #f8f8f4;
-  --paper-soft: #f1f2ed;
-  --acid: #c7ff4a;
-  --acid-strong: #aee82a;
-  --danger: #a84f47;
 }
+
 * {
   box-sizing: border-box;
 }
+
 html,
 body,
 #root {
@@ -33,28 +26,34 @@ body,
   height: 100%;
   overflow: hidden;
 }
+
 body {
   min-width: 1080px;
   min-height: 680px;
 }
+
 button,
 input,
 select {
   font: inherit;
 }
+
 button {
   color: inherit;
 }
+
 button,
 select {
   cursor: pointer;
 }
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {
   outline: 2px solid #7ca90f;
   outline-offset: 2px;
 }
+
 ::selection {
   background: var(--acid);
   color: var(--ink);

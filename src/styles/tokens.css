@@ -1,0 +1,11 @@
+:root {
+  --ink: #1f211d;
+  --muted: #777b70;
+  --line: rgba(42, 45, 38, 0.12);
+  --line-strong: rgba(42, 45, 38, 0.2);
+  --paper: #f8f8f4;
+  --paper-soft: #f1f2ed;
+  --acid: #c7ff4a;
+  --acid-strong: #aee82a;
+  --danger: #a84f47;
+}
