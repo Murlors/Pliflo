@@ -30,7 +30,7 @@ export function PdfPreviewPanel({
 
   return (
     <section className="preview-panel relative flex min-h-0 min-w-0 flex-col">
-      <div className="preview-toolbar flex min-h-17.5 shrink-0 items-center justify-between gap-3 px-5 pb-2 pt-3.5">
+      <div className="preview-toolbar flex min-h-17.5 shrink-0 items-center justify-between gap-3 px-5 pb-2 pt-3.5 max-[1240px]:px-3.25">
         <div className="document-title min-w-0">
           <span className="surface-label block text-xs font-700 tracking-[0.1em] uppercase">
             {labels.paperStage}
@@ -66,7 +66,7 @@ export function PdfPreviewPanel({
               <span />
               <span />
             </div>
-            <p>{labels.previewEmpty}</p>
+            <p className="m-0">{labels.previewEmpty}</p>
           </div>
         )}
       </div>

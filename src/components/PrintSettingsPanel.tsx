@@ -131,7 +131,7 @@ export function PrintSettingsPanel({
 
   return (
     <aside className="settings-panel flex min-h-0 min-w-0 flex-col">
-      <div className="panel-heading flex min-h-19.5 shrink-0 items-center justify-between gap-3 px-4 pb-3.25 pt-3.75">
+      <div className="panel-heading flex min-h-19.5 shrink-0 items-center justify-between gap-3 px-4 pb-3.25 pt-3.75 max-[1240px]:px-3.25">
         <div>
           <h2 className="m-0 text-base font-680 leading-none tracking-tight">
             {labels.printSetup}
@@ -152,7 +152,7 @@ export function PrintSettingsPanel({
         </button>
       </div>
 
-      <div className="setting-section printer-section px-3.75 pb-3.25 pt-3.5">
+      <div className="setting-section printer-section px-3.75 pb-3.25 pt-3.5 max-[1240px]:px-3">
         <label className="text-xs font-620">{labels.printer}</label>
         <div className="select-shell prominent mt-2 flex h-10.5 items-center gap-2 px-2.5">
           <Printer size={17} />
@@ -209,8 +209,8 @@ export function PrintSettingsPanel({
         className="settings-scroll settings-fieldset m-0 min-h-0 flex-1 overflow-auto border-0 p-0"
         disabled={locked}
       >
-        <div className="setting-section px-3.75 py-2.75">
-          <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+        <div className="setting-section px-3.75 py-2.75 max-[1240px]:px-3">
+          <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
             <label className="text-xs font-620">{labels.copies}</label>
             <div className="stepper grid h-7 grid-cols-[27px_31px_27px] justify-self-end overflow-hidden">
               <button
@@ -232,9 +232,9 @@ export function PrintSettingsPanel({
               </button>
             </div>
           </div>
-          <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+          <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
             <label className="text-xs font-620">{labels.paper}</label>
-            <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
+            <div className="select-shell compact h-7.25 w-38 justify-self-end px-2 max-[1240px]:w-35.5">
               <select
                 aria-label={labels.paperSize}
                 value={settings.media}
@@ -256,7 +256,7 @@ export function PrintSettingsPanel({
               <ChevronDown size={14} />
             </div>
           </div>
-          <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+          <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
             <label className="text-xs font-620">
               {settings.pagesPerSheet > 1 ? labels.outputPageRange : labels.pageRange}
             </label>
@@ -268,7 +268,7 @@ export function PrintSettingsPanel({
               onChange={(event) => onChangeSetting({ pageRange: event.target.value })}
             />
           </div>
-          <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+          <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
             <label className="text-xs font-620">{labels.orientation}</label>
             <div className="segmented flex max-w-51.25 justify-self-end p-0.5">
               {(["auto", "portrait", "landscape"] as const).map((value) => (
@@ -289,10 +289,10 @@ export function PrintSettingsPanel({
           </div>
         </div>
 
-        <div className="setting-section px-3.75 py-2.75">
-          <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+        <div className="setting-section px-3.75 py-2.75 max-[1240px]:px-3">
+          <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
             <label className="text-xs font-620">{labels.twoSided}</label>
-            <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
+            <div className="select-shell compact h-7.25 w-38 justify-self-end px-2 max-[1240px]:w-35.5">
               <select
                 aria-label={labels.twoSidedPrinting}
                 value={settings.duplex}
@@ -308,7 +308,7 @@ export function PrintSettingsPanel({
               <ChevronDown size={14} />
             </div>
           </div>
-          <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+          <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
             <label className="text-xs font-620">{labels.color}</label>
             <div className="segmented flex max-w-51.25 justify-self-end p-0.5">
               <button
@@ -336,7 +336,7 @@ export function PrintSettingsPanel({
               </button>
             </div>
           </div>
-          <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2">
+          <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
             <label className="text-xs font-620">{labels.scale}</label>
             <div className="segmented flex max-w-51.25 justify-self-end p-0.5">
               <button
@@ -365,9 +365,9 @@ export function PrintSettingsPanel({
             <ChevronDown size={15} />
           </summary>
           <div className="advanced-settings-body px-2.5 pb-2 pt-0.5">
-            <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2">
+            <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
               <label className="text-xs font-620">{labels.pagesPerSheet}</label>
-              <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
+              <div className="select-shell compact h-7.25 w-38 justify-self-end px-2 max-[1240px]:w-35.5">
                 <select
                   value={settings.pagesPerSheet}
                   onChange={(event) =>
@@ -385,11 +385,11 @@ export function PrintSettingsPanel({
                 <ChevronDown size={14} />
               </div>
             </div>
-            <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2">
+            <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
               <label className="text-xs font-620">
                 {settings.pagesPerSheet > 1 ? labels.outputPageSet : labels.pageSet}
               </label>
-              <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
+              <div className="select-shell compact h-7.25 w-38 justify-self-end px-2 max-[1240px]:w-35.5">
                 <select
                   value={settings.pageSet}
                   onChange={(event) =>
@@ -412,9 +412,9 @@ export function PrintSettingsPanel({
               />
             </label>
             {!!printerCapabilities?.trays.length && (
-              <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2">
+              <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
                 <label className="text-xs font-620">{labels.paperSource}</label>
-                <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
+                <div className="select-shell compact h-7.25 w-38 justify-self-end px-2 max-[1240px]:w-35.5">
                   <select
                     value={settings.tray}
                     onChange={(event) => onChangeSetting({ tray: event.target.value })}
@@ -431,9 +431,9 @@ export function PrintSettingsPanel({
               </div>
             )}
             {!!printerCapabilities?.qualities.length && (
-              <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2">
+              <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
                 <label className="text-xs font-620">{labels.printQuality}</label>
-                <div className="select-shell compact h-7.25 w-38 justify-self-end px-2">
+                <div className="select-shell compact h-7.25 w-38 justify-self-end px-2 max-[1240px]:w-35.5">
                   <select
                     value={settings.quality}
                     onChange={(event) =>
@@ -488,21 +488,25 @@ export function PrintSettingsPanel({
             </small>
           )}
         </div>
-        <div className="submission-note">
-          <span />
+        <div className="submission-note mb-2.5 flex items-start gap-2">
+          <span className="mt-0.5 size-1.75 shrink-0" />
           <p>
             <strong>{labels.submissionTitle}</strong> {labels.submissionBody}
           </p>
         </div>
-        <div className="action-row">
+        <div className="action-row flex gap-1.75">
           {(queueRunning || queuePaused) && pendingCount > 0 && (
-            <button className="secondary-action" type="button" onClick={onToggleQueuePause}>
+            <button
+              className="secondary-action flex h-10.5 items-center gap-1.25 px-2.75 text-xs"
+              type="button"
+              onClick={onToggleQueuePause}
+            >
               {queuePaused ? <Play size={16} /> : <Pause size={16} />}
               {queuePaused ? labels.resumeQueue : labels.pauseQueue}
             </button>
           )}
           <button
-            className="print-button"
+            className="print-button flex h-10.5 flex-1 items-center justify-center gap-1.75 text-sm font-760"
             type="button"
             disabled={!pendingCount || !selectedPrinter || !printerCapabilities || queueRunning}
             onClick={onStartQueue}
@@ -514,15 +518,15 @@ export function PrintSettingsPanel({
           .filter((item) => item.systemJobId)
           .map((item) => (
             <button
-              className="active-job"
+              className="active-job mt-1.75 flex w-full justify-between gap-2 px-1 py-1.5 text-xs"
               type="button"
               key={item.id}
               onClick={() => onCancelJob(item)}
             >
-              <span>
+              <span className="flex min-w-0 max-w-58.75 items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap">
                 <StatusIcon state={item.state} /> {item.name}
               </span>
-              <small>{labels.cancel}</small>
+              <small className="shrink-0">{labels.cancel}</small>
             </button>
           ))}
       </div>

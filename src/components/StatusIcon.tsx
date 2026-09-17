@@ -9,5 +9,5 @@ export function StatusIcon({ state }: { state: JobState }) {
   }
   if (state === "cancelled") return <X size={14} />;
   if (state === "submitted") return <Clock3 size={14} />;
-  return <span className="status-dot" />;
+  return <span className="status-dot size-1.25 rounded-full" />;
 }

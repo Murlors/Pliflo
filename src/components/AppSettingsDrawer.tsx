@@ -48,8 +48,8 @@ export function AppSettingsDrawer({
   onReset,
 }: AppSettingsDrawerProps) {
   return (
-    <div className="settings-drawer">
-      <div className="drawer-heading">
+    <div className="settings-drawer absolute right-3 top-18 z-50 max-h-[calc(100vh-84px)] w-90 overflow-auto">
+      <div className="drawer-heading sticky top-0 z-2 flex min-h-16.5 items-center justify-between gap-3 px-2.5 py-3 pl-3.5">
         <div>
           <h2>{labels.settings}</h2>
           <span className="panel-caption">{labels.settingsCaption}</span>
@@ -64,11 +64,13 @@ export function AppSettingsDrawer({
         </button>
       </div>
 
-      <div className="app-settings-section">
-        <strong>{labels.appearance}</strong>
-        <div className="setting-row wide-label">
+      <div className="app-settings-section border-b px-3.5 py-3.5">
+        <strong className="mb-2.25 block text-xs font-720 tracking-[0.01em]">
+          {labels.appearance}
+        </strong>
+        <div className="setting-row wide-label grid min-h-10.5 grid-cols-[minmax(104px,0.8fr)_minmax(150px,1.2fr)] items-center gap-2 py-0.75">
           <label>{labels.theme}</label>
-          <div className="segmented settings-segmented">
+          <div className="segmented settings-segmented flex w-full max-w-none p-0.5">
             {(
               [
                 ["system", labels.themeSystem],
@@ -79,7 +81,7 @@ export function AppSettingsDrawer({
               <button
                 key={value}
                 type="button"
-                className={preferences.theme === value ? "active" : ""}
+                className={`min-w-0 flex-1 px-1.5 ${preferences.theme === value ? "active" : ""}`}
                 onClick={() => onPreferencesChange({ theme: value })}
               >
                 {label}
@@ -87,19 +89,19 @@ export function AppSettingsDrawer({
             ))}
           </div>
         </div>
-        <div className="setting-row wide-label">
+        <div className="setting-row wide-label grid min-h-10.5 grid-cols-[minmax(104px,0.8fr)_minmax(150px,1.2fr)] items-center gap-2 py-0.75">
           <label>{labels.languageLabel}</label>
-          <div className="segmented settings-segmented two">
+          <div className="segmented settings-segmented two flex w-full max-w-none p-0.5">
             <button
               type="button"
-              className={locale === "zh-CN" ? "active" : ""}
+              className={`min-w-16 flex-1 px-1.5 ${locale === "zh-CN" ? "active" : ""}`}
               onClick={() => onLocaleChange("zh-CN")}
             >
               {labels.chinese}
             </button>
             <button
               type="button"
-              className={locale === "en" ? "active" : ""}
+              className={`min-w-16 flex-1 px-1.5 ${locale === "en" ? "active" : ""}`}
               onClick={() => onLocaleChange("en")}
             >
               {labels.english}
@@ -108,11 +110,13 @@ export function AppSettingsDrawer({
         </div>
       </div>
 
-      <div className="app-settings-section">
-        <strong>{labels.printingBehavior}</strong>
-        <div className="setting-row wide-label">
+      <div className="app-settings-section border-b px-3.5 py-3.5">
+        <strong className="mb-2.25 block text-xs font-720 tracking-[0.01em]">
+          {labels.printingBehavior}
+        </strong>
+        <div className="setting-row wide-label grid min-h-10.5 grid-cols-[minmax(104px,0.8fr)_minmax(150px,1.2fr)] items-center gap-2 py-0.75">
           <label>{labels.printerPreference}</label>
-          <div className="select-shell compact">
+          <div className="select-shell compact w-full min-w-0">
             <select
               value={preferences.printerPreference}
               onChange={(event) =>
@@ -129,16 +133,18 @@ export function AppSettingsDrawer({
         </div>
       </div>
 
-      <details className="settings-disclosure">
-        <summary>
+      <details className="settings-disclosure mx-3.5 mt-3 overflow-hidden">
+        <summary className="flex min-h-10 items-center justify-between px-2.5 text-xs font-680">
           <span>{labels.behavior}</span>
           <ChevronDown size={15} />
         </summary>
-        <div className="settings-disclosure-body">
-          <label className="toggle-row stacked-toggle">
-            <span>
-              <strong>{labels.restoreBatch}</strong>
-              <small>{labels.restoreBatchHint}</small>
+        <div className="settings-disclosure-body px-2.5 pb-2.5 pt-2">
+          <label className="toggle-row stacked-toggle flex min-h-12.5 items-center justify-between gap-2.5">
+            <span className="flex min-w-0 flex-col gap-0.75">
+              <strong className="text-xs">{labels.restoreBatch}</strong>
+              <small className="max-w-55 text-[11px] font-500 leading-[1.35]">
+                {labels.restoreBatchHint}
+              </small>
             </span>
             <input
               type="checkbox"
@@ -146,9 +152,9 @@ export function AppSettingsDrawer({
               onChange={(event) => onPreferencesChange({ restoreBatch: event.target.checked })}
             />
           </label>
-          <div className="setting-row wide-label">
+          <div className="setting-row wide-label grid min-h-10.5 grid-cols-[minmax(104px,0.8fr)_minmax(150px,1.2fr)] items-center gap-2 py-0.75">
             <label>{labels.historyRetention}</label>
-            <div className="select-shell compact">
+            <div className="select-shell compact w-full min-w-0">
               <select
                 value={preferences.historyRetention}
                 onChange={(event) =>
@@ -164,13 +170,21 @@ export function AppSettingsDrawer({
               <ChevronDown size={14} />
             </div>
           </div>
-          <button className="settings-text-button" type="button" onClick={onClearHistory}>
+          <button
+            className="settings-text-button mt-1.75 inline-flex min-h-8.5 w-full items-center justify-center gap-1.5 text-xs font-650"
+            type="button"
+            onClick={onClearHistory}
+          >
             {labels.clearHistory}
           </button>
         </div>
       </details>
 
-      <button className="settings-reset" type="button" onClick={onReset}>
+      <button
+        className="settings-reset mx-3.5 mb-3.5 mt-3 inline-flex min-h-8.5 w-[calc(100%-28px)] items-center justify-center gap-1.5 text-xs font-650"
+        type="button"
+        onClick={onReset}
+      >
         <RotateCcw size={14} /> {labels.resetAppSettings}
       </button>
     </div>

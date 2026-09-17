@@ -49,7 +49,7 @@ export function QueuePanel({
 }: QueuePanelProps) {
   return (
     <aside className="queue-panel flex min-h-0 min-w-0 flex-col">
-      <div className="panel-heading flex min-h-19.5 shrink-0 items-center justify-between gap-3 px-4 pb-3.25 pt-3.75">
+      <div className="panel-heading flex min-h-19.5 shrink-0 items-center justify-between gap-3 px-4 pb-3.25 pt-3.75 max-[1240px]:px-3.25">
         <div>
           <h1 className="m-0 text-lg font-680 leading-none tracking-tight">{labels.printQueue}</h1>
           <span className="panel-caption mt-1.25 block text-xs leading-snug">
