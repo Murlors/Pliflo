@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default desktop capability for Pliflo",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-open"]
+  "permissions": ["core:default", "core:window:allow-start-dragging", "dialog:allow-open"]
 }

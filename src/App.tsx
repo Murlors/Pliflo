@@ -1,5 +1,6 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   Archive,
@@ -273,7 +274,17 @@ function App() {
 
   return (
     <main className="app-shell">
-      <header className="topbar" data-tauri-drag-region>
+      <header
+        className="topbar"
+        data-tauri-drag-region
+        onMouseDown={(event) => {
+          if (event.button !== 0) return;
+          if ((event.target as HTMLElement).closest("button")) return;
+          void getCurrentWindow()
+            .startDragging()
+            .catch((error) => setNotice(`Window drag failed: ${String(error)}`));
+        }}
+      >
         <div className="brand-lockup">
           <div className="brand-mark" aria-hidden="true">
             <span />
