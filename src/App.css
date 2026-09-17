@@ -132,6 +132,17 @@
   background: #1b1f1b;
 }
 
+.app-shell[data-theme="dark"] .preview-sheet {
+  background: #2c312c;
+  box-shadow:
+    0 25px 50px rgba(8, 10, 8, 0.26),
+    0 2px 8px rgba(8, 10, 8, 0.18);
+}
+
+.app-shell[data-theme="dark"] .preview-sheet span {
+  background: #4a5149;
+}
+
 .app-shell[data-theme="light"] {
   --console: #eceee8;
   --console-2: #f5f6f1;
@@ -227,6 +238,15 @@
 .app-shell[data-theme="light"] .add-button:hover {
   border-color: rgba(111, 155, 32, 0.58);
   background: #deedc1;
+}
+
+.app-shell[data-theme="light"] .drop-icon {
+  border-color: rgba(31, 36, 31, 0.12);
+  background: #f8f9f4;
+  color: #7faf24;
+  box-shadow:
+    0 12px 25px rgba(48, 56, 47, 0.1),
+    0 1px 2px rgba(48, 56, 47, 0.06);
 }
 
 .app-shell[data-theme="light"] .file-row.selected,
