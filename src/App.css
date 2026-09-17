@@ -15,6 +15,13 @@
   --screen-strong: #9fd532;
   --warning: #e9bf69;
   --danger: #e07b6d;
+  --control-bg: #1b1f1b;
+  --control-bg-hover: #242924;
+  --control-bg-active: #2a3029;
+  --control-text: #cbd1ca;
+  --control-text-strong: #f0f3ed;
+  --control-muted: #737c73;
+  --control-toggle: #262b27;
   --text-xs: 12px;
   --text-sm: 14px;
   --text-base: 16px;
@@ -24,6 +31,7 @@
   overflow: hidden;
   background: var(--console);
   color: var(--ink);
+  color-scheme: dark;
 }
 
 /* Theme and surface system */
@@ -73,16 +81,16 @@
   justify-content: center;
   gap: 5px;
   border: 1px solid var(--console-line-strong);
-  background: #1b1f1b;
-  color: #cbd1ca;
+  background: var(--control-bg);
+  color: var(--control-text);
   font-size: var(--text-xs);
   font-weight: 700;
 }
 
 .language-button:hover {
   border-color: rgba(255, 255, 255, 0.26);
-  background: #242924;
-  color: #fff;
+  background: var(--control-bg-hover);
+  color: var(--control-text-strong);
 }
 
 .app-shell[data-theme="dark"] .preview-panel {
@@ -137,7 +145,15 @@
   --paper-line: rgba(31, 36, 31, 0.1);
   --ink: #232823;
   --muted: #70776d;
+  --control-bg: #eef0ea;
+  --control-bg-hover: #e2e6dd;
+  --control-bg-active: #e5edd8;
+  --control-text: #4c554b;
+  --control-text-strong: #20261f;
+  --control-muted: #737b71;
+  --control-toggle: #d8ddd3;
   background: #eceee8;
+  color-scheme: light;
 }
 
 .app-shell[data-theme="light"] .topbar {
@@ -194,10 +210,23 @@
 .app-shell[data-theme="light"] .ghost-button:hover,
 .app-shell[data-theme="light"] .icon-button:hover,
 .app-shell[data-theme="light"] .language-button:hover,
+.app-shell[data-theme="light"] .secondary-action:hover,
 .app-shell[data-theme="light"] .file-row:hover,
 .app-shell[data-theme="light"] .stepper button:hover {
+  border-color: rgba(31, 36, 31, 0.22);
   background: #e2e6dd;
   color: #171b17;
+}
+
+.app-shell[data-theme="light"] .add-button {
+  border-color: rgba(111, 155, 32, 0.38);
+  background: #e8f2d4;
+  color: #34431c;
+}
+
+.app-shell[data-theme="light"] .add-button:hover {
+  border-color: rgba(111, 155, 32, 0.58);
+  background: #deedc1;
 }
 
 .app-shell[data-theme="light"] .file-row.selected,
@@ -213,6 +242,17 @@
 
 .app-shell[data-theme="light"] .search-row input {
   color: #262c25;
+}
+
+.app-shell[data-theme="light"] .file-row,
+.app-shell[data-theme="light"] .active-job,
+.app-shell[data-theme="light"] .notice-bar button,
+.app-shell[data-theme="light"] .printer-meta button {
+  color: #687067;
+}
+
+.app-shell[data-theme="light"] .active-job:hover {
+  color: #293028;
 }
 
 .app-shell[data-theme="light"] .drop-zone strong,
@@ -283,6 +323,7 @@
 
 .app-shell[data-theme="light"] .settings-reset:hover,
 .app-shell[data-theme="light"] .settings-text-button:hover {
+  border-color: rgba(31, 36, 31, 0.22);
   background: #e2e6dd;
   color: #252b24;
 }
@@ -441,12 +482,20 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--screen-strong);
+  outline-offset: 2px;
+}
+
 .ghost-button,
 .icon-button,
 .secondary-action {
   border: 1px solid var(--console-line-strong);
-  background: #1b1f1b;
-  color: #cbd1ca;
+  background: var(--control-bg);
+  color: var(--control-text);
 }
 
 .ghost-button {
@@ -470,8 +519,8 @@ button {
 .ghost-button:hover,
 .icon-button:hover {
   border-color: rgba(255, 255, 255, 0.26);
-  background: #242924;
-  color: #fff;
+  background: var(--control-bg-hover);
+  color: var(--control-text-strong);
 }
 
 .danger-hover:hover {
@@ -1101,14 +1150,14 @@ button {
   height: 29px;
   justify-content: center;
   gap: 5px;
-  color: #737c73;
+  color: var(--control-muted);
   font-size: var(--text-xs);
   font-weight: 620;
 }
 
 .scope-switch button.active {
-  background: #2a3029;
-  color: #edf1e9;
+  background: var(--control-bg-active);
+  color: var(--control-text-strong);
   box-shadow: inset 0 0 0 1px var(--console-line);
 }
 
@@ -1146,19 +1195,19 @@ button {
 .stepper span {
   display: grid;
   place-items: center;
-  color: #cfd5ce;
+  color: var(--control-text);
   font-size: var(--text-xs);
 }
 
 .stepper button:hover {
-  background: #2a3029;
-  color: #fff;
+  background: var(--control-bg-hover);
+  color: var(--control-text-strong);
 }
 
 .stepper span {
   border-left: 1px solid var(--console-line);
   border-right: 1px solid var(--console-line);
-  color: #f0f2ed;
+  color: var(--control-text-strong);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1213,12 +1262,12 @@ button {
   min-width: 43px;
   height: 24px;
   padding: 0 7px;
-  color: #737c73;
+  color: var(--control-muted);
   font-size: var(--text-xs);
 }
 
 .segmented button:hover {
-  color: #cdd4cc;
+  color: var(--control-text);
 }
 
 .segmented button:disabled,
@@ -1228,8 +1277,8 @@ button {
 }
 
 .segmented button.active {
-  background: #2b3229;
-  color: #e8f9c6;
+  background: var(--control-bg-active);
+  color: var(--control-text-strong);
   box-shadow: inset 0 0 0 1px rgba(184, 237, 80, 0.12);
 }
 
@@ -1297,7 +1346,7 @@ button {
   position: relative;
   border: 1px solid var(--console-line-strong);
   border-radius: 999px;
-  background: #262b27;
+  background: var(--control-toggle);
   cursor: pointer;
   transition: background 0.15s ease;
 }
@@ -1376,8 +1425,8 @@ button {
 
 .secondary-action:hover {
   border-color: rgba(255, 255, 255, 0.24);
-  background: #252a25;
-  color: #fff;
+  background: var(--control-bg-hover);
+  color: var(--control-text-strong);
 }
 
 .print-button {
@@ -1605,8 +1654,8 @@ button {
   gap: 6px;
   border: 1px solid var(--console-line-strong);
   border-radius: var(--radius-sm);
-  background: #202420;
-  color: #9fa79d;
+  background: var(--control-bg);
+  color: var(--control-text);
   font-size: var(--text-xs);
   font-weight: 650;
 }
@@ -1624,8 +1673,8 @@ button {
 .settings-text-button:hover,
 .settings-reset:hover {
   border-color: rgba(255, 255, 255, 0.2);
-  background: #272c27;
-  color: #e2e7df;
+  background: var(--control-bg-hover);
+  color: var(--control-text-strong);
 }
 
 .drawer-heading {
