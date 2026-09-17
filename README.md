@@ -88,8 +88,11 @@ bun run desktop:build
 
 ```text
 src/
-  App.tsx            Main application flow and state
-  App.css            UI system and light/dark themes
+  App.tsx            Application orchestration and state
+  app/               Shared app types, defaults and localized copy
+  components/        Queue, preview, print settings and drawers
+  lib/               Printing estimates and local persistence
+  styles/            Tokens, globals and semantic component styles
 src-tauri/
   src/lib.rs         Native PDF/printer commands and job tracking
   icons/             Minimal desktop icon set + vector source
@@ -97,6 +100,12 @@ src-tauri/
 PRODUCT.md           Product behavior and scope
 DESIGN.md            Visual direction and interaction notes
 ```
+
+## Releases
+
+Tags matching `v*` trigger the GitHub Actions release workflow. The workflow builds a universal macOS bundle for Apple Silicon and Intel, then publishes the generated app/DMG assets to a GitHub Release.
+
+The first public build is unsigned and not notarized unless Apple signing credentials are configured in CI. macOS may therefore show the standard Gatekeeper warning for downloaded builds.
 
 ## Asset policy
 
