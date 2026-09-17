@@ -4,7 +4,7 @@ This file defines the project-level rules for future coding agents and maintaine
 
 ## Product and platform
 
-- Pliflo is a local-first desktop utility for batch-printing PDFs.
+- Pliflo is a local-first desktop utility for batch-printing PDF, DOCX, PPTX, XLSX, Markdown and common image files.
 - The supported first-release platform is macOS.
 - The current native print backend uses the macOS/CUPS toolchain (`lp`, `lpstat`, `lpoptions`).
 - Windows remains an extension target. Do not treat the current CUPS implementation as portable; Windows support needs a platform-specific backend and real validation.
@@ -15,9 +15,9 @@ This file defines the project-level rules for future coding agents and maintaine
 
 - Never submit a real print job during development, testing or automated verification unless the user explicitly authorizes it for that run.
 - Read-only printer discovery and capability inspection are safe default checks.
-- Preserve the distinction between a PDF in the batch, a job accepted by the operating system, an actively printing job and a physically completed job.
+- Preserve the distinction between a source document in the batch, a locally prepared printable artifact, a job accepted by the operating system, an actively printing job and a physically completed job.
 - A successful submission must not be reported as printing completion.
-- Every PDF is submitted as an independent print job by default.
+- Every successfully prepared document is submitted as an independent print job by default.
 - Cancellation, failure and incomplete states must remain observable rather than being silently converted to success.
 - Show printer-specific controls only when the selected printer or driver actually reports that capability. Do not invent unsupported paper trays, quality levels, duplex modes or color modes for UI completeness.
 
@@ -31,16 +31,26 @@ src/
   app/            Shared app types, defaults and localized copy
   components/     UI regions and reusable desktop controls
   hooks/          Focused React hooks when stateful behavior is reusable
-  lib/            Printing estimates, persistence and other pure helpers
+  lib/            Document preparation, printing estimates, persistence and other helpers
   styles/         Theme tokens, globals and semantic/complex CSS
 src-tauri/
-  src/lib.rs      Native printer/PDF commands and job tracking
+  src/lib.rs      Native file/PDF, printer and job-tracking commands
 ```
 
 - Keep `App.tsx` as the orchestration shell instead of moving the whole product into one component or creating a deep feature hierarchy.
 - Prefer existing components, types and helpers before adding another abstraction layer.
 - Add dependencies only when they materially reduce implementation risk or maintenance cost.
 - Platform-specific native printing logic belongs behind explicit platform boundaries rather than scattered through React components.
+
+## Document preparation model
+
+- Keep the original local source path as the durable document identity. `printPath` is the current printable representation used by preview and submission.
+- PDF sources use the original file directly. DOCX, PPTX, XLSX, Markdown and images are prepared locally into temporary PDFs before reusing the shared settings, estimates, queue and CUPS path.
+- Prefer `@silurus/ooxml` for OOXML parsing/rendering where its API provides the needed layout data. Do not imply unsupported Office fidelity: XLSX pagination is Pliflo's used-range/scale model rather than a complete Excel print engine.
+- Generated artifacts belong only under Pliflo's system-temp render root. Remove superseded artifacts when safe, rebuild them from the source after restoring a persisted unfinished batch, and never delete or modify original user files.
+- Keep preparation asynchronous and bounded so importing many files does not create unbounded concurrent WASM/render work or memory use.
+- A corrupted, encrypted or otherwise unreadable source must remain visible as a failed document without aborting preparation of the rest of the batch.
+- Format-specific settings should be incremental additions to the existing settings panel and appear only for formats that support them.
 
 ## UnoCSS and CSS ownership
 

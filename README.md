@@ -5,27 +5,42 @@
 </p>
 
 <p align="center">
-  A lightweight desktop workspace for batch-printing PDFs with clear per-file control.
+  A lightweight desktop workspace for batch-printing local documents with clear per-file control.
 </p>
 
-Pliflo is a local-first PDF batch printing app built with **Tauri 2 + React + TypeScript + Vite+**. It is designed for people who regularly print groups of PDFs and want a faster workflow than opening and configuring every document one by one.
+Pliflo is a local-first document batch printing app built with **Tauri 2 + React + TypeScript + Vite+**. It is designed for people who regularly print groups of PDFs, Office documents, Markdown files and images and want a faster workflow than opening and configuring every document one by one.
 
 The first release targets **macOS**. The architecture keeps Windows support in mind, but Windows printing behavior has not been validated yet.
 
 ## What Pliflo does
 
-- Import multiple PDFs by file picker or drag and drop.
+- Import PDF, DOCX, PPTX, XLSX, Markdown and common images by file picker or drag and drop.
 - Reorder a batch before printing.
-- Preview the selected PDF inside the app.
+- Preview the selected document inside the app using a unified printable representation.
 - Apply settings to the whole batch or override an individual file.
 - Control copies, page range, paper size, orientation, duplex, color mode, scaling, pages per sheet, reverse order and odd/even pages.
 - Expose tray and print-quality controls only when the selected printer reports those capabilities.
-- Submit each PDF as its own print job, so one document does not block configuration or cancellation of the rest of the batch.
+- Submit each document as its own print job, so one document does not block configuration or cancellation of the rest of the batch.
 - Track queued, submitted, printing, completed, cancelled and failed states separately.
 - Keep lightweight local history and optionally restore an unfinished batch.
 - Switch between Chinese and English, with system/light/dark appearance modes.
 
-Pliflo does not upload documents or require a server. PDF inspection, preview state and print orchestration stay on the local machine.
+Pliflo does not upload documents or require a server. Inspection, conversion, preview state and print orchestration stay on the local machine.
+
+## Supported document formats
+
+| Format                              | Local preparation strategy                                                                                           |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| PDF                                 | Used directly as the printable document                                                                              |
+| DOCX                                | Parsed and paginated locally with `@silurus/ooxml`, then rendered to a temporary PDF                                 |
+| PPTX                                | Slides rendered locally with `@silurus/ooxml`, preserving slide page size in the temporary PDF                       |
+| XLSX                                | Worksheets rendered locally with `@silurus/ooxml`; Pliflo provides sheet selection plus fit-width or 100% pagination |
+| Markdown                            | Parsed locally with `marked` and rendered with Pliflo's lightweight paged print style                                |
+| PNG / JPG / JPEG / WebP / GIF / BMP | Rendered locally to paper-sized pages with fit-page or actual-size behavior                                          |
+
+Non-PDF sources converge on the same model: **source file → local preparation → temporary printable PDF → existing preview/settings/queue/CUPS path**. Temporary files live only in Pliflo's own system-temp directory and are rebuilt from the original source when a persisted unfinished batch is restored.
+
+XLSX printing is intentionally pragmatic rather than an Excel-compatible print engine: it uses the worksheet used range, supports visible-sheet selection, fit-width and 100% scaling, and paginates vertically. Excel-specific print areas, repeating print titles and every page-layout feature are not currently reproduced. Image “actual size” uses 96 DPI when reliable physical-density metadata is unavailable.
 
 ## Printing model
 
@@ -44,6 +59,8 @@ During development, do not use the print action for routine testing. The UI, bui
 | Frontend toolchain | Vite+                              |
 | Package manager    | Bun                                |
 | Icons              | Lucide React                       |
+| Office rendering   | `@silurus/ooxml`                   |
+| Markdown parsing   | `marked`                           |
 | Native layer       | Rust                               |
 | macOS printing     | CUPS / `lp`, `lpstat`, `lpoptions` |
 | Persistence        | Local storage                      |
@@ -91,10 +108,10 @@ src/
   App.tsx            Application orchestration and state
   app/               Shared app types, defaults and localized copy
   components/        Queue, preview, print settings and drawers
-  lib/               Printing estimates and local persistence
+  lib/               Document preparation, printing estimates and local persistence
   styles/            Tokens, globals and semantic component styles
 src-tauri/
-  src/lib.rs         Native PDF/printer commands and job tracking
+  src/lib.rs         Native file/PDF, printer and job-tracking commands
   icons/             Minimal desktop icon set + vector source
   tauri.conf.json    Window, security and bundle configuration
 AGENTS.md            Maintenance rules for future agents and contributors

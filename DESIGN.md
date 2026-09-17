@@ -2,7 +2,7 @@
 
 ## Direction
 
-Pliflo uses a **Mastering Console** visual metaphor. A print batch is treated like a controlled signal chain: source PDFs enter on the left, the active sheet is inspected on a paper stage in the center, output is tuned on the right, and job state stays visible in the transport strip above.
+Pliflo uses a **Mastering Console** visual metaphor. A print batch is treated like a controlled signal chain: source documents enter on the left, the active printable representation is inspected on a paper stage in the center, output is tuned on the right, and job state stays visible in the transport strip above.
 
 The interface is an operational desktop tool first. Visual character should reinforce hierarchy, state and precision without adding friction or decorative weight.
 
@@ -77,7 +77,10 @@ The macOS release uses an overlay title bar with the native traffic lights above
 
 ## Product-State Rules
 
-- A PDF entering the batch is not yet a print job.
+- A source document entering the batch is not yet a print job.
+- Non-PDF formats are prepared locally into a temporary printable PDF so preview, print settings, estimates and queue behavior remain visually and operationally consistent.
+- Format-specific controls stay inside the existing settings flow and appear only when relevant. XLSX exposes sheet/scaling choices; images expose sizing choices. Do not add persistent format toolbars or additional workspace columns.
+- Preparation failures stay visible as document-level error states without blocking already prepared documents in the batch.
 - `submitted` means the operating system accepted the job.
 - `printing` and `completed` are distinct from submission and should never be implied prematurely.
 - Failures and cancellation must remain visible and recoverable in history.

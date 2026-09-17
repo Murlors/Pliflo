@@ -12,23 +12,28 @@ Tauri 2 desktop application with React, TypeScript and Vite+. macOS is the compl
 
 ## Primary Users
 
-People who repeatedly print groups of PDF documents from a desktop Mac and need more control and visibility than the system print dialog provides.
+People who repeatedly print groups of mixed local documents from a desktop Mac and need more control and visibility than opening each source application and system print dialog separately provides.
 
 ## Core Job
 
-Import a batch of PDFs, put them in the intended order, inspect the documents, choose batch defaults or per-file overrides, submit each document as an independent print job, and understand whether each job is merely submitted to the operating system or has actually completed.
+Import a mixed batch of supported local documents, put them in the intended order, inspect their printable form, choose batch defaults or per-file overrides, submit each document as an independent print job, and understand whether each job is merely submitted to the operating system or has actually completed.
 
 ## Operating Context
 
-The product is a focused desktop utility used during routine document handling. Typical work happens with a printer already configured in macOS, several local PDFs, and a need to prepare or monitor many jobs without repeatedly reopening native dialogs.
+The product is a focused desktop utility used during routine document handling. Typical work happens with a printer already configured in macOS, several local PDFs, Office files, Markdown notes or images, and a need to prepare or monitor many jobs without repeatedly reopening source applications and native dialogs.
 
 ## Capabilities and Constraints
 
-- Batch import through file picker and drag and drop.
-- Reorder, search, inspect metadata and preview PDFs locally.
+- Batch import through file picker and drag and drop for PDF, DOCX, PPTX, XLSX, Markdown and common image formats.
+- Reorder, search, inspect metadata and preview the locally prepared printable document.
 - Batch defaults plus per-file print settings.
+- DOCX and PPTX use local `@silurus/ooxml` layout/rendering and become temporary printable PDFs before entering the shared print path.
+- XLSX supports visible-sheet selection and pragmatic used-range pagination with fit-width or 100% scaling. It does not promise complete Excel print-area/page-layout fidelity.
+- Markdown uses a lightweight local paged renderer. Remote Markdown images are not fetched; local relative images may be embedded during preparation.
+- Images support fit-page and actual-size preparation; actual size assumes 96 DPI when physical-density metadata is unavailable.
+- Generated printable artifacts are ephemeral, stay under Pliflo-owned system-temp storage, and are regenerated from the source after an unfinished batch is restored.
 - Printer discovery, presets, queue management, cancellation, history and explicit error states.
-- Every PDF is submitted as its own system print job by default.
+- Every document is submitted as its own system print job by default after local preparation succeeds.
 - macOS printing uses the local CUPS command-line interface to keep runtime size and maintenance cost low.
 - System submission and physical completion are separate states in the product model.
 - Real printing must never be triggered during development or automated verification without the user’s explicit confirmation.
@@ -41,7 +46,7 @@ The product name is Pliflo. The interface uses Lucide icons and never uses emoji
 
 ## Evidence on Hand
 
-The current repository contains a working macOS-first implementation with PDF import, preview, settings, queue states, printer discovery, local persistence and Tauri packaging. The project also has an automated universal macOS release workflow. There are no customer testimonials, benchmark claims or external brand assets to fabricate.
+The current repository contains a working macOS-first implementation with multi-format import, local document preparation, PDF-based preview/print normalization, settings, queue states, printer discovery, local persistence and Tauri packaging. The project also has an automated universal macOS release workflow. There are no customer testimonials, benchmark claims or external brand assets to fabricate.
 
 ## Product Principles
 
