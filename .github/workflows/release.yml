@@ -45,7 +45,9 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Pliflo ${{ github.ref_name }}"
           releaseBody: |
-            First public release of Pliflo, a lightweight local-first PDF batch printing app for macOS.
+            Pliflo 1.0 expands the macOS batch-printing workflow from PDF-only to local multi-format documents.
+
+            Supported sources include PDF, DOCX, PPTX, XLSX, Markdown, PNG, JPG/JPEG, WebP, GIF and BMP. Non-PDF documents are prepared locally into printable PDFs and reuse the same preview, settings, queue and CUPS printing pipeline.
 
             See the README for current platform support and printing behavior.
           releaseDraft: false
