@@ -36,7 +36,13 @@
   color: var(--console-text);
   background: #121512;
   border-bottom: 1px solid var(--console-line-strong);
+  -webkit-user-select: none;
   user-select: none;
+}
+
+.brand-lockup,
+.transport {
+  pointer-events: none;
 }
 
 .brand-lockup,
