@@ -50,7 +50,8 @@
 .scope-switch button,
 .stepper,
 .segmented,
-.preset-card,
+.advanced-settings,
+.compact-input,
 .print-button,
 .secondary-action,
 .active-job,
@@ -59,7 +60,6 @@
 }
 
 .drop-zone,
-.preset-card,
 .notice-bar {
   border-radius: var(--radius-md);
 }
@@ -173,7 +173,8 @@
 .app-shell[data-theme="light"] .stepper,
 .app-shell[data-theme="light"] .select-shell.compact,
 .app-shell[data-theme="light"] .segmented,
-.app-shell[data-theme="light"] .preset-card,
+.app-shell[data-theme="light"] .advanced-settings,
+.app-shell[data-theme="light"] .compact-input,
 .app-shell[data-theme="light"] .secondary-action {
   background: #eef0ea;
   color: #4c554b;
@@ -254,7 +255,7 @@
   box-shadow: inset 0 0 0 2px #f7f8f3;
 }
 
-.app-shell[data-theme="light"] .preset-card strong,
+.app-shell[data-theme="light"] .advanced-settings summary,
 .app-shell[data-theme="light"] .submission-note strong,
 .app-shell[data-theme="light"] .history-row strong {
   color: #394038;
@@ -1153,6 +1154,26 @@ button {
   font-size: var(--text-xs);
 }
 
+.compact-input {
+  width: 152px;
+  height: 29px;
+  justify-self: end;
+  padding: 0 9px;
+  border: 1px solid var(--console-line-strong);
+  outline: 0;
+  background: #171a17;
+  color: #dce2da;
+  font-size: var(--text-xs);
+}
+
+.compact-input::placeholder {
+  color: #626b62;
+}
+
+.compact-input:focus {
+  border-color: rgba(184, 237, 80, 0.42);
+}
+
 .segmented {
   justify-self: end;
   display: flex;
@@ -1174,58 +1195,109 @@ button {
   color: #cdd4cc;
 }
 
+.segmented button:disabled,
+.select-shell select:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
 .segmented button.active {
   background: #2b3229;
   color: #e8f9c6;
   box-shadow: inset 0 0 0 1px rgba(184, 237, 80, 0.12);
 }
 
-.preset-card {
-  margin: 11px 13px;
-  padding: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+.advanced-settings {
+  margin: 10px 13px 12px;
   border: 1px solid var(--console-line);
   background: #191d19;
 }
 
-.preset-card > div {
-  min-width: 0;
-  gap: 8px;
-  color: #aab3aa;
-}
-
-.preset-card span {
-  min-width: 0;
+.advanced-settings summary {
+  min-height: 38px;
+  padding: 0 10px;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.preset-card strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #dfe4dc;
-  font-size: var(--text-xs);
-}
-
-.preset-card small {
-  color: #6e776e;
-  font-size: var(--text-xs);
-}
-
-.preset-card button {
-  flex: 0 0 auto;
-  color: #a9d55a;
+  align-items: center;
+  justify-content: space-between;
+  color: #aab3aa;
   font-size: var(--text-xs);
   font-weight: 680;
+  cursor: pointer;
+  list-style: none;
 }
 
-.preset-card button:hover {
-  color: #d8ff93;
+.advanced-settings summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-settings summary span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.advanced-settings summary > svg {
+  transition: transform 0.16s ease;
+}
+
+.advanced-settings[open] summary > svg {
+  transform: rotate(180deg);
+}
+
+.advanced-settings-body {
+  padding: 2px 10px 8px;
+  border-top: 1px solid var(--console-line);
+}
+
+.advanced-settings-body .setting-row {
+  grid-template-columns: 88px minmax(0, 1fr);
+}
+
+.toggle-row {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #828b82;
+  font-size: var(--text-xs);
+  font-weight: 620;
+}
+
+.toggle-row input {
+  width: 32px;
+  height: 18px;
+  appearance: none;
+  position: relative;
+  border: 1px solid var(--console-line-strong);
+  border-radius: 999px;
+  background: #262b27;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.toggle-row input::after {
+  content: "";
+  width: 12px;
+  height: 12px;
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  border-radius: 50%;
+  background: #8b938b;
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease;
+}
+
+.toggle-row input:checked {
+  background: rgba(184, 237, 80, 0.2);
+  border-color: rgba(184, 237, 80, 0.45);
+}
+
+.toggle-row input:checked::after {
+  transform: translateX(14px);
+  background: var(--screen);
 }
 
 .print-actions {

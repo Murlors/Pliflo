@@ -34,6 +34,14 @@ import "./App.css";
 
 type PdfInfo = { path: string; name: string; sizeBytes: number; pages: number | null };
 type PrinterInfo = { name: string; isDefault: boolean; state: string };
+type PrinterOption = { value: string; label: string; isDefault: boolean };
+type PrinterCapabilities = {
+  media: PrinterOption[];
+  trays: PrinterOption[];
+  qualities: PrinterOption[];
+  supportsDuplex: boolean;
+  supportsColor: boolean;
+};
 type JobState =
   | "queued"
   | "submitting"
@@ -49,6 +57,12 @@ type PrintSettings = {
   orientation: "auto" | "portrait" | "landscape";
   media: string;
   scale: "fit" | "actual";
+  pageRange: string;
+  pagesPerSheet: 1 | 2 | 4 | 6 | 9 | 16;
+  reverse: boolean;
+  pageSet: "all" | "odd" | "even";
+  tray: string;
+  quality: "printer" | "draft" | "normal" | "high";
 };
 type QueueItem = PdfInfo & {
   id: string;
@@ -68,6 +82,12 @@ const DEFAULT_SETTINGS: PrintSettings = {
   orientation: "auto",
   media: "A4",
   scale: "fit",
+  pageRange: "",
+  pagesPerSheet: 1,
+  reverse: false,
+  pageSet: "all",
+  tray: "",
+  quality: "printer",
 };
 
 const COPY = {
@@ -131,6 +151,21 @@ const COPY = {
     gray: "Gray",
     scale: "Scale",
     fit: "Fit",
+    printerDefault: "Printer default",
+    pageRange: "Pages",
+    pageRangePlaceholder: "All or 1-3, 5",
+    advanced: "Advanced",
+    pagesPerSheet: "Pages / sheet",
+    pageSet: "Page set",
+    allPages: "All pages",
+    oddPages: "Odd only",
+    evenPages: "Even only",
+    reverseOrder: "Reverse order",
+    paperSource: "Paper source",
+    printQuality: "Print quality",
+    qualityDraft: "Draft",
+    qualityNormal: "Normal",
+    qualityHigh: "High",
     officeStandard: "Office standard",
     presetDetail: "A4 · Duplex · Fit",
     savePreset: "Save preset",
@@ -212,6 +247,21 @@ const COPY = {
     gray: "灰度",
     scale: "缩放",
     fit: "适合页面",
+    printerDefault: "跟随打印机",
+    pageRange: "页码范围",
+    pageRangePlaceholder: "全部或 1-3, 5",
+    advanced: "高级",
+    pagesPerSheet: "每张页数",
+    pageSet: "奇偶页",
+    allPages: "全部",
+    oddPages: "仅奇数页",
+    evenPages: "仅偶数页",
+    reverseOrder: "逆序打印",
+    paperSource: "纸张来源",
+    printQuality: "打印质量",
+    qualityDraft: "草稿",
+    qualityNormal: "标准",
+    qualityHigh: "高质量",
     officeStandard: "办公标准",
     presetDetail: "A4 · 双面 · 适合页面",
     savePreset: "保存预设",
@@ -269,6 +319,7 @@ function App() {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [selectedPrinter, setSelectedPrinter] = useState("");
+  const [printerCapabilities, setPrinterCapabilities] = useState<PrinterCapabilities | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [batchSettings, setBatchSettings] = useState<PrintSettings>({ ...DEFAULT_SETTINGS });
   const [queuePaused, setQueuePaused] = useState(false);
@@ -340,6 +391,21 @@ function App() {
   // Printer discovery is an external OS synchronization and intentionally updates UI state.
   // oxlint-disable-next-line react/set-state-in-effect
   useEffect(() => void refreshPrinters(), [refreshPrinters]);
+
+  useEffect(() => {
+    if (!selectedPrinter) return;
+    let cancelled = false;
+    void invoke<PrinterCapabilities>("get_printer_capabilities", { printer: selectedPrinter })
+      .then((result) => {
+        if (!cancelled) setPrinterCapabilities(result);
+      })
+      .catch(() => {
+        if (!cancelled) setPrinterCapabilities(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPrinter]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -422,7 +488,17 @@ function App() {
       const result = await invoke<SubmitResult>("submit_print_job", {
         path: item.path,
         printer: selectedPrinter,
-        settings: item.settings,
+        settings: {
+          ...item.settings,
+          duplex:
+            printerCapabilities && !printerCapabilities.supportsDuplex
+              ? "none"
+              : item.settings.duplex,
+          color:
+            printerCapabilities && !printerCapabilities.supportsColor
+              ? "auto"
+              : item.settings.color,
+        },
       });
       setItems((current) =>
         current.map((candidate) =>
@@ -696,7 +772,10 @@ function App() {
               <select
                 aria-label={copy.printer}
                 value={selectedPrinter}
-                onChange={(event) => setSelectedPrinter(event.target.value)}
+                onChange={(event) => {
+                  setPrinterCapabilities(null);
+                  setSelectedPrinter(event.target.value);
+                }}
               >
                 {!printers.length && <option value="">{copy.noPrinters}</option>}
                 {printers.map((printer) => (
@@ -766,12 +845,31 @@ function App() {
                     value={settings.media}
                     onChange={(event) => changeSetting({ media: event.target.value })}
                   >
-                    <option>A4</option>
-                    <option>Letter</option>
-                    <option>Legal</option>
+                    {(printerCapabilities?.media.length
+                      ? printerCapabilities.media
+                      : [
+                          { value: "A4", label: "A4", isDefault: true },
+                          { value: "Letter", label: "Letter", isDefault: false },
+                          { value: "Legal", label: "Legal", isDefault: false },
+                        ]
+                    ).map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                   <ChevronDown size={14} />
                 </div>
+              </div>
+              <div className="setting-row">
+                <label>{copy.pageRange}</label>
+                <input
+                  className="compact-input"
+                  inputMode="numeric"
+                  value={settings.pageRange}
+                  placeholder={copy.pageRangePlaceholder}
+                  onChange={(event) => changeSetting({ pageRange: event.target.value })}
+                />
               </div>
               <div className="setting-row">
                 <label>{copy.orientation}</label>
@@ -807,6 +905,7 @@ function App() {
                   <select
                     aria-label={copy.twoSidedPrinting}
                     value={settings.duplex}
+                    disabled={printerCapabilities ? !printerCapabilities.supportsDuplex : false}
                     onChange={(event) =>
                       changeSetting({ duplex: event.target.value as PrintSettings["duplex"] })
                     }
@@ -826,11 +925,12 @@ function App() {
                     type="button"
                     onClick={() => changeSetting({ color: "auto" })}
                   >
-                    {copy.auto}
+                    {copy.printerDefault}
                   </button>
                   <button
                     className={settings.color === "color" ? "active" : ""}
                     type="button"
+                    disabled={printerCapabilities ? !printerCapabilities.supportsColor : false}
                     onClick={() => changeSetting({ color: "color" })}
                   >
                     {copy.color}
@@ -838,6 +938,7 @@ function App() {
                   <button
                     className={settings.color === "grayscale" ? "active" : ""}
                     type="button"
+                    disabled={printerCapabilities ? !printerCapabilities.supportsColor : false}
                     onClick={() => changeSetting({ color: "grayscale" })}
                   >
                     {copy.gray}
@@ -864,16 +965,100 @@ function App() {
                 </div>
               </div>
             </div>
-            <div className="preset-card">
-              <div>
-                <SlidersHorizontal size={15} />
+            <details className="advanced-settings">
+              <summary>
                 <span>
-                  <strong>{copy.officeStandard}</strong>
-                  <small>{copy.presetDetail}</small>
+                  <SlidersHorizontal size={15} /> {copy.advanced}
                 </span>
+                <ChevronDown size={15} />
+              </summary>
+              <div className="advanced-settings-body">
+                <div className="setting-row">
+                  <label>{copy.pagesPerSheet}</label>
+                  <div className="select-shell compact">
+                    <select
+                      value={settings.pagesPerSheet}
+                      onChange={(event) =>
+                        changeSetting({
+                          pagesPerSheet: Number(
+                            event.target.value,
+                          ) as PrintSettings["pagesPerSheet"],
+                        })
+                      }
+                    >
+                      {[1, 2, 4, 6, 9, 16].map((count) => (
+                        <option key={count} value={count}>
+                          {count}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={14} />
+                  </div>
+                </div>
+                <div className="setting-row">
+                  <label>{copy.pageSet}</label>
+                  <div className="select-shell compact">
+                    <select
+                      value={settings.pageSet}
+                      onChange={(event) =>
+                        changeSetting({ pageSet: event.target.value as PrintSettings["pageSet"] })
+                      }
+                    >
+                      <option value="all">{copy.allPages}</option>
+                      <option value="odd">{copy.oddPages}</option>
+                      <option value="even">{copy.evenPages}</option>
+                    </select>
+                    <ChevronDown size={14} />
+                  </div>
+                </div>
+                <label className="toggle-row">
+                  <span>{copy.reverseOrder}</span>
+                  <input
+                    type="checkbox"
+                    checked={settings.reverse}
+                    onChange={(event) => changeSetting({ reverse: event.target.checked })}
+                  />
+                </label>
+                {!!printerCapabilities?.trays.length && (
+                  <div className="setting-row">
+                    <label>{copy.paperSource}</label>
+                    <div className="select-shell compact">
+                      <select
+                        value={settings.tray}
+                        onChange={(event) => changeSetting({ tray: event.target.value })}
+                      >
+                        <option value="">{copy.printerDefault}</option>
+                        {printerCapabilities.trays.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown size={14} />
+                    </div>
+                  </div>
+                )}
+                {!!printerCapabilities?.qualities.length && (
+                  <div className="setting-row">
+                    <label>{copy.printQuality}</label>
+                    <div className="select-shell compact">
+                      <select
+                        value={settings.quality}
+                        onChange={(event) =>
+                          changeSetting({ quality: event.target.value as PrintSettings["quality"] })
+                        }
+                      >
+                        <option value="printer">{copy.printerDefault}</option>
+                        <option value="draft">{copy.qualityDraft}</option>
+                        <option value="normal">{copy.qualityNormal}</option>
+                        <option value="high">{copy.qualityHigh}</option>
+                      </select>
+                      <ChevronDown size={14} />
+                    </div>
+                  </div>
+                )}
               </div>
-              <button type="button">{copy.savePreset}</button>
-            </div>
+            </details>
           </div>
           <div className="print-actions">
             <div className="submission-note">

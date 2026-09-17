@@ -18,6 +18,24 @@ struct PrinterInfo {
     state: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PrinterOption {
+    value: String,
+    label: String,
+    is_default: bool,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct PrinterCapabilities {
+    media: Vec<PrinterOption>,
+    trays: Vec<PrinterOption>,
+    qualities: Vec<PrinterOption>,
+    supports_duplex: bool,
+    supports_color: bool,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PrintSettings {
@@ -27,6 +45,12 @@ struct PrintSettings {
     orientation: String,
     media: String,
     scale: String,
+    page_range: String,
+    pages_per_sheet: u8,
+    reverse: bool,
+    page_set: String,
+    tray: String,
+    quality: String,
 }
 
 #[derive(Serialize)]
@@ -88,18 +112,81 @@ fn list_printers() -> Result<Vec<PrinterInfo>, String> {
 }
 
 #[cfg(target_os = "macos")]
+fn parse_printer_option(line: &str) -> Option<(String, Vec<PrinterOption>)> {
+    let (heading, values) = line.split_once(':')?;
+    let key = heading.split('/').next()?.trim().to_string();
+    let options = values
+        .split_whitespace()
+        .filter_map(|entry| {
+            let is_default = entry.starts_with('*');
+            let raw = entry.trim_start_matches('*');
+            let (value, label) = raw.split_once('/').unwrap_or((raw, raw));
+            (!value.is_empty()).then(|| PrinterOption {
+                value: value.to_string(),
+                label: label.replace('_', " "),
+                is_default,
+            })
+        })
+        .collect();
+    Some((key, options))
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn get_printer_capabilities(printer: String) -> Result<PrinterCapabilities, String> {
+    let output = command_output("lpoptions", &["-p", printer.as_str(), "-l"])?;
+    let mut capabilities = PrinterCapabilities::default();
+
+    for line in output.lines() {
+        let Some((key, options)) = parse_printer_option(line) else { continue };
+        match key.as_str() {
+            "PageSize" | "media" => capabilities.media = options,
+            "InputSlot" | "MediaSource" => capabilities.trays = options,
+            "cupsPrintQuality" | "print-quality" => capabilities.qualities = options,
+            "Duplex" => capabilities.supports_duplex = options.len() > 1,
+            "ColorModel" | "ColorMode" | "print-color-mode" => {
+                capabilities.supports_color = options.len() > 1
+            }
+            _ => {}
+        }
+    }
+
+    Ok(capabilities)
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn get_printer_capabilities(_printer: String) -> Result<PrinterCapabilities, String> {
+    Ok(PrinterCapabilities::default())
+}
+
+#[cfg(target_os = "macos")]
 #[tauri::command]
 fn submit_print_job(path: String, printer: String, settings: PrintSettings) -> Result<SubmitResult, String> {
     if !Path::new(&path).is_file() { return Err("The selected PDF no longer exists.".to_string()); }
+    if !settings.page_range.chars().all(|char| char.is_ascii_digit() || matches!(char, ',' | '-' | ' ')) {
+        return Err("Page range contains unsupported characters.".to_string());
+    }
     let copies = settings.copies.clamp(1, 99).to_string();
     let duplex = match settings.duplex.as_str() { "long" => "Duplex=DuplexNoTumble", "short" => "Duplex=DuplexTumble", _ => "Duplex=None" };
     let color = match settings.color.as_str() { "grayscale" => Some("ColorModel=Gray"), "color" => Some("ColorModel=RGB"), _ => None };
     let orientation = match settings.orientation.as_str() { "portrait" => Some("orientation-requested=3"), "landscape" => Some("orientation-requested=4"), _ => None };
     let scale = if settings.scale == "actual" { "scaling=100" } else { "fit-to-page" };
     let media = format!("media={}", settings.media);
+    let page_range = (!settings.page_range.trim().is_empty()).then(|| format!("page-ranges={}", settings.page_range.trim().replace(' ', "")));
+    let pages_per_sheet = format!("number-up={}", match settings.pages_per_sheet { 2 | 4 | 6 | 9 | 16 => settings.pages_per_sheet, _ => 1 });
+    let page_set = match settings.page_set.as_str() { "odd" => Some("page-set=odd"), "even" => Some("page-set=even"), _ => None };
+    let tray = (!settings.tray.is_empty()).then(|| format!("InputSlot={}", settings.tray));
+    let quality = match settings.quality.as_str() { "draft" => Some("print-quality=3"), "normal" => Some("print-quality=4"), "high" => Some("print-quality=5"), _ => None };
     let mut args = vec!["-d", printer.as_str(), "-n", copies.as_str(), "-o", duplex, "-o", scale, "-o", media.as_str()];
     if let Some(value) = color { args.extend(["-o", value]); }
     if let Some(value) = orientation { args.extend(["-o", value]); }
+    if let Some(value) = page_range.as_deref() { args.extend(["-o", value]); }
+    args.extend(["-o", pages_per_sheet.as_str()]);
+    if settings.reverse { args.extend(["-o", "outputorder=reverse"]); }
+    if let Some(value) = page_set { args.extend(["-o", value]); }
+    if let Some(value) = tray.as_deref() { args.extend(["-o", value]); }
+    if let Some(value) = quality { args.extend(["-o", value]); }
     args.push(path.as_str());
     let raw = command_output("lp", &args)?;
     let job_id = raw.split_whitespace().find(|part| part.contains('-') && part.chars().last().is_some_and(|char| char.is_ascii_digit())).unwrap_or_default().trim_end_matches('.').to_string();
@@ -139,7 +226,7 @@ fn cancel_print_job(_job_id: String) -> Result<(), String> { Err("Job cancellati
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![inspect_pdfs, list_printers, submit_print_job, get_print_job_state, cancel_print_job])
+        .invoke_handler(tauri::generate_handler![inspect_pdfs, list_printers, get_printer_capabilities, submit_print_job, get_print_job_state, cancel_print_job])
         .run(tauri::generate_context!())
         .expect("error while running Pliflo");
 }
