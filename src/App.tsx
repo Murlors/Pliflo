@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
-import { ChevronDown, CircleAlert, FileText, RotateCcw, X } from "lucide-react";
+import { CircleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_PREFERENCES, DEFAULT_SETTINGS } from "./app/constants";
 import type {
@@ -17,11 +17,12 @@ import type {
   Theme,
 } from "./app/types";
 import "./styles/app.css";
+import { AppSettingsDrawer } from "./components/AppSettingsDrawer";
 import { AppTopbar } from "./components/AppTopbar";
+import { HistoryDrawer } from "./components/HistoryDrawer";
 import { PdfPreviewPanel } from "./components/PdfPreviewPanel";
 import { PrintSettingsPanel } from "./components/PrintSettingsPanel";
 import { QueuePanel } from "./components/QueuePanel";
-import { StatusIcon } from "./components/StatusIcon";
 import { createQueueItem, estimatePrintUsage } from "./lib/print";
 import {
   loadPreferences,
@@ -750,195 +751,37 @@ function App() {
       </section>
 
       {historyOpen && (
-        <div className="history-drawer">
-          <div className="drawer-heading">
-            <div>
-              <h2>{copy.printHistory}</h2>
-              <span className="panel-caption">{copy.historyCaption}</span>
-            </div>
-            <button
-              className="icon-button"
-              type="button"
-              aria-label={copy.closeHistory}
-              onClick={() => setHistoryOpen(false)}
-            >
-              <X size={17} />
-            </button>
-          </div>
-          {!history.length ? (
-            <div className="drawer-empty">{copy.historyEmpty}</div>
-          ) : (
-            history.map((item) => (
-              <div className="history-row" key={item.id}>
-                <FileText size={16} />
-                <span>
-                  <strong>{item.name}</strong>
-                  <small>
-                    {stateLabel[item.state]}
-                    {item.systemJobId ? ` · ${item.systemJobId}` : ""}
-                  </small>
-                </span>
-                <StatusIcon state={item.state} />
-              </div>
-            ))
-          )}
-        </div>
+        <HistoryDrawer
+          labels={copy}
+          items={history}
+          stateLabel={stateLabel}
+          onClose={() => setHistoryOpen(false)}
+        />
       )}
 
       {settingsOpen && (
-        <div className="settings-drawer">
-          <div className="drawer-heading">
-            <div>
-              <h2>{copy.settings}</h2>
-              <span className="panel-caption">{copy.settingsCaption}</span>
-            </div>
-            <button
-              className="icon-button"
-              type="button"
-              aria-label={copy.closeSettings}
-              onClick={() => setSettingsOpen(false)}
-            >
-              <X size={17} />
-            </button>
-          </div>
-
-          <div className="app-settings-section">
-            <strong>{copy.appearance}</strong>
-            <div className="setting-row wide-label">
-              <label>{copy.theme}</label>
-              <div className="segmented settings-segmented">
-                {(
-                  [
-                    ["system", copy.themeSystem],
-                    ["light", copy.themeLightLabel],
-                    ["dark", copy.themeDarkLabel],
-                  ] as const
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={preferences.theme === value ? "active" : ""}
-                    onClick={() => setPreferences((current) => ({ ...current, theme: value }))}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="setting-row wide-label">
-              <label>{copy.languageLabel}</label>
-              <div className="segmented settings-segmented two">
-                <button
-                  type="button"
-                  className={locale === "zh-CN" ? "active" : ""}
-                  onClick={() => setLocale("zh-CN")}
-                >
-                  {copy.chinese}
-                </button>
-                <button
-                  type="button"
-                  className={locale === "en" ? "active" : ""}
-                  onClick={() => setLocale("en")}
-                >
-                  {copy.english}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="app-settings-section">
-            <strong>{copy.printingBehavior}</strong>
-            <div className="setting-row wide-label">
-              <label>{copy.printerPreference}</label>
-              <div className="select-shell compact">
-                <select
-                  value={preferences.printerPreference}
-                  onChange={(event) =>
-                    setPreferences((current) => ({
-                      ...current,
-                      printerPreference: event.target.value as AppPreferences["printerPreference"],
-                    }))
-                  }
-                >
-                  <option value="system">{copy.useSystemPrinter}</option>
-                  <option value="last">{copy.useLastPrinter}</option>
-                </select>
-                <ChevronDown size={14} />
-              </div>
-            </div>
-          </div>
-
-          <details className="settings-disclosure">
-            <summary>
-              <span>{copy.behavior}</span>
-              <ChevronDown size={15} />
-            </summary>
-            <div className="settings-disclosure-body">
-              <label className="toggle-row stacked-toggle">
-                <span>
-                  <strong>{copy.restoreBatch}</strong>
-                  <small>{copy.restoreBatchHint}</small>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={preferences.restoreBatch}
-                  onChange={(event) =>
-                    setPreferences((current) => ({
-                      ...current,
-                      restoreBatch: event.target.checked,
-                    }))
-                  }
-                />
-              </label>
-              <div className="setting-row wide-label">
-                <label>{copy.historyRetention}</label>
-                <div className="select-shell compact">
-                  <select
-                    value={preferences.historyRetention}
-                    onChange={(event) =>
-                      setPreferences((current) => ({
-                        ...current,
-                        historyRetention: event.target.value as AppPreferences["historyRetention"],
-                      }))
-                    }
-                  >
-                    <option value="session">{copy.historySession}</option>
-                    <option value="30d">{copy.history30d}</option>
-                    <option value="forever">{copy.historyForever}</option>
-                  </select>
-                  <ChevronDown size={14} />
-                </div>
-              </div>
-              <button
-                className="settings-text-button"
-                type="button"
-                onClick={() => {
-                  for (const item of items) {
-                    if (["completed", "cancelled", "failed"].includes(item.state)) {
-                      archivedTerminalIdsRef.current.add(item.id);
-                    }
-                  }
-                  setHistoryItems([]);
-                  localStorage.removeItem("pliflo-history");
-                }}
-              >
-                {copy.clearHistory}
-              </button>
-            </div>
-          </details>
-
-          <button
-            className="settings-reset"
-            type="button"
-            onClick={() => {
-              setPreferences(DEFAULT_PREFERENCES);
-              setLocale(navigator.language.startsWith("zh") ? "zh-CN" : "en");
-              localStorage.removeItem("pliflo-last-printer");
-            }}
-          >
-            <RotateCcw size={14} /> {copy.resetAppSettings}
-          </button>
-        </div>
+        <AppSettingsDrawer
+          labels={copy}
+          preferences={preferences}
+          locale={locale}
+          onClose={() => setSettingsOpen(false)}
+          onPreferencesChange={(patch) => setPreferences((current) => ({ ...current, ...patch }))}
+          onLocaleChange={setLocale}
+          onClearHistory={() => {
+            for (const item of items) {
+              if (["completed", "cancelled", "failed"].includes(item.state)) {
+                archivedTerminalIdsRef.current.add(item.id);
+              }
+            }
+            setHistoryItems([]);
+            localStorage.removeItem("pliflo-history");
+          }}
+          onReset={() => {
+            setPreferences(DEFAULT_PREFERENCES);
+            setLocale(navigator.language.startsWith("zh") ? "zh-CN" : "en");
+            localStorage.removeItem("pliflo-last-printer");
+          }}
+        />
       )}
     </main>
   );
