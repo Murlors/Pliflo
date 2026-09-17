@@ -92,17 +92,21 @@ fn inspect_pdfs(paths: Vec<String>) -> Result<Vec<PdfInfo>, String> {
 #[cfg(target_os = "macos")]
 #[tauri::command]
 fn list_printers() -> Result<Vec<PrinterInfo>, String> {
-    let listing = command_output("lpstat", &["-p", "-d"])?;
-    let default_name = listing.lines().find_map(|line| line.strip_prefix("system default destination: ")).unwrap_or_default().trim().to_string();
-    let printers = listing.lines().filter(|line| line.starts_with("printer ")).filter_map(|line| {
-        let name = line.split_whitespace().nth(1)?;
-        Some(PrinterInfo {
+    // `lpstat -p/-d` localizes its prose, so parsing English prefixes breaks on
+    // non-English macOS installations. `-e` emits one destination name per line.
+    let destinations = command_output("lpstat", &["-e"])?;
+    let default_listing = command_output("lpstat", &["-d"]).unwrap_or_default();
+
+    Ok(destinations
+        .lines()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(|name| PrinterInfo {
             name: name.to_string(),
-            is_default: name == default_name,
-            state: if line.contains("disabled") { "Unavailable" } else { "Ready" }.to_string(),
+            is_default: default_listing.contains(name),
+            state: "Ready".to_string(),
         })
-    }).collect();
-    Ok(printers)
+        .collect())
 }
 
 #[cfg(not(target_os = "macos"))]
