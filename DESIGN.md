@@ -12,12 +12,12 @@ The interface is an operational desktop tool first. Visual character should rein
 - Preview: warm paper-white stage with restrained borders and shadows.
 - Accent: a single phosphor green for readiness, active selection and primary actions.
 - Secondary status: amber for active work, muted green for completed work, warm red for destructive/error states.
-- Shape language: compact rectangular controls, etched rules, minimal rounding.
+- Shape language: compact controls with restrained, consistent corner radii; avoid both harsh seams and inflated card-like rounding.
 - Texture: rely on contrast, rules and subtle inset depth. Avoid decorative grids, gradients or large ornamental effects.
 
 ## Core Tokens
 
-The canonical runtime tokens live in `src/App.css` under `.app-shell`.
+The canonical runtime theme tokens live under `src/styles/`, with semantic application styling in `src/styles/app.css`.
 
 - Console: `#171a18`, `#1d211e`, `#252a26`
 - Console text: `#edf0e8`
@@ -30,6 +30,13 @@ The canonical runtime tokens live in `src/App.css` under `.app-shell`.
 - Danger: `#e07b6d`
 
 Use spacing and border contrast before adding new colors.
+
+## Styling Ownership
+
+- UnoCSS owns ordinary layout, spacing, sizing, alignment, responsive behavior and typography.
+- Theme variables, light/dark mappings, borders and shadows, state styles, complex controls and a small set of semantic component styles stay in `src/styles/`.
+- Prefer utility classes when a rule is structural and local to one component. Prefer CSS when the rule expresses shared theme/state behavior or would be awkward and repetitive as utilities.
+- Every new visual state must remain legible in both light and dark appearance modes.
 
 ## Layout
 
@@ -58,6 +65,7 @@ Use the native/system sans-serif stack for low runtime cost and platform fit. Hi
 - Native form controls should be visually integrated with explicit foreground/background colors.
 - Hover and focus states increase contrast; keyboard focus remains visible.
 - Frequent actions stay compact. Primary submission gets the strongest visual weight.
+- Light and dark themes must preserve the same hierarchy, capability states and action emphasis rather than simply inverting colors.
 
 ## Motion
 

@@ -4,7 +4,7 @@
 
 ## Platform
 
-web
+Desktop application. macOS is the supported first-release platform; Windows is a planned extension target that requires its own printing backend and validation.
 
 ## Stack
 
@@ -41,7 +41,7 @@ The product name is Pliflo. The interface uses Lucide icons and never uses emoji
 
 ## Evidence on Hand
 
-The current repository contains a working macOS-first implementation with PDF import, preview, settings, queue states, printer discovery and Tauri packaging. There are no customer testimonials, benchmark claims or external brand assets to fabricate.
+The current repository contains a working macOS-first implementation with PDF import, preview, settings, queue states, printer discovery, local persistence and Tauri packaging. The project also has an automated universal macOS release workflow. There are no customer testimonials, benchmark claims or external brand assets to fabricate.
 
 ## Product Principles
 

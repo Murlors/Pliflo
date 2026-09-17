@@ -97,9 +97,17 @@ src-tauri/
   src/lib.rs         Native PDF/printer commands and job tracking
   icons/             Minimal desktop icon set + vector source
   tauri.conf.json    Window, security and bundle configuration
+AGENTS.md            Maintenance rules for future agents and contributors
 PRODUCT.md           Product behavior and scope
 DESIGN.md            Visual direction and interaction notes
 ```
+
+## Documentation
+
+- `README.md` is the public entry point for setup, architecture, platform status and releases.
+- `PRODUCT.md` records durable product scope, behavior and constraints.
+- `DESIGN.md` records the visual system and interaction rules.
+- `AGENTS.md` records repository-level maintenance rules, including print safety, architecture boundaries, styling ownership and verification expectations.
 
 ## Releases
 
