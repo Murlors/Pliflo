@@ -26,7 +26,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
 type PdfInfo = { path: string; name: string; sizeBytes: number; pages: number | null };
@@ -133,26 +133,60 @@ function loadPreferences(): AppPreferences {
   }
 }
 
-function loadStoredItems(preferences: AppPreferences): QueueItem[] {
-  const parseItems = (key: string) => {
-    try {
-      const value = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown;
-      return Array.isArray(value) ? (value as QueueItem[]) : [];
-    } catch {
-      return [];
+function parseStoredItems(key: string) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown;
+    return Array.isArray(value) ? (value as QueueItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadStoredBatch(preferences: AppPreferences): QueueItem[] {
+  if (!preferences.restoreBatch) return [];
+
+  return parseStoredItems("pliflo-batch").map((item) => {
+    if (item.state === "submitted" || item.state === "printing") {
+      return item.systemJobId
+        ? { ...item, error: undefined, finishedAt: undefined }
+        : {
+            ...item,
+            state: "failed" as const,
+            error: "Submission state could not be restored because no system job ID was recorded.",
+            finishedAt: Date.now(),
+          };
     }
-  };
-  const history = preferences.historyRetention === "session" ? [] : parseItems("pliflo-history");
-  const batch = preferences.restoreBatch
-    ? parseItems("pliflo-batch").map((item) => ({
+    if (item.state === "submitting") {
+      return {
         ...item,
-        state: "queued" as const,
-        systemJobId: undefined,
-        error: undefined,
-        finishedAt: undefined,
-      }))
-    : [];
-  return [...history, ...batch];
+        state: "failed" as const,
+        error:
+          "Submission was interrupted before a system job ID was recorded. Review before retrying.",
+        finishedAt: Date.now(),
+      };
+    }
+    return {
+      ...item,
+      state: "queued" as const,
+      systemJobId: undefined,
+      error: undefined,
+      finishedAt: undefined,
+    };
+  });
+}
+
+function loadStoredHistory(preferences: AppPreferences): QueueItem[] {
+  return preferences.historyRetention === "session" ? [] : parseStoredItems("pliflo-history");
+}
+
+function recoverStoredJobId(error?: string) {
+  if (!error?.includes("unrecognized job id")) return null;
+  return (
+    error.match(/[A-Za-z0-9_.][A-Za-z0-9_.-]*-\d+/g)?.find((candidate) => {
+      const suffix = candidate.slice(candidate.lastIndexOf("-") + 1);
+      return suffix.length > 0 && /^\d+$/.test(suffix);
+    }) ?? null
+  );
 }
 
 const COPY = {
@@ -178,6 +212,9 @@ const COPY = {
     chooseMac: "or choose files from your Mac",
     pages: (count: number) => `${count} pages`,
     pagesUnknown: "Pages unknown",
+    estimatedSheets: "Estimated sheets",
+    printedPages: "Printed sides",
+    estimatePartial: "partial",
     inProgress: "In progress",
     paperStage: "Paper stage",
     noDocument: "No document selected",
@@ -194,6 +231,7 @@ const COPY = {
     printer: "Printer",
     noPrinters: "No printers found",
     defaultPrinter: "Default",
+    printerDetected: "Detected",
     notConnected: "Not connected",
     refresh: "Refresh",
     batch: "Batch",
@@ -218,10 +256,12 @@ const COPY = {
     fit: "Fit",
     printerDefault: "Printer default",
     pageRange: "Pages",
+    outputPageRange: "Output pages",
     pageRangePlaceholder: "All or 1-3, 5",
     advanced: "Advanced",
     pagesPerSheet: "Pages / sheet",
     pageSet: "Page set",
+    outputPageSet: "Output page set",
     allPages: "All pages",
     oddPages: "Odd only",
     evenPages: "Even only",
@@ -236,8 +276,8 @@ const COPY = {
     savePreset: "Save preset",
     submissionTitle: "System submission is tracked separately.",
     submissionBody: "Completion appears only after macOS reports the job finished.",
-    resume: "Resume",
-    pause: "Pause",
+    resumeQueue: "Resume queue",
+    pauseQueue: "Pause queue",
     printFiles: (count: number) => `Print ${count || ""} ${count === 1 ? "file" : "files"}`,
     cancel: "Cancel",
     printHistory: "Print history",
@@ -268,6 +308,9 @@ const COPY = {
     clearHistory: "Clear history",
     resetAppSettings: "Reset app settings",
     selectPrinter: "Select a printer before starting the queue.",
+    printerCapabilitiesUnavailable:
+      "Printer capabilities are still unavailable. Refresh the printer before printing.",
+    submissionError: (name: string, error: unknown) => `Could not submit ${name}: ${String(error)}`,
     addFilesError: (error: unknown) => `Could not add files: ${String(error)}`,
     cancelError: (error: unknown) => `Cancel request failed: ${String(error)}`,
     dragError: (error: unknown) => `Window drag failed: ${String(error)}`,
@@ -297,6 +340,9 @@ const COPY = {
     chooseMac: "或从 Mac 选择文件",
     pages: (count: number) => `${count} 页`,
     pagesUnknown: "页数未知",
+    estimatedSheets: "预计用纸",
+    printedPages: "打印面数",
+    estimatePartial: "部分可计算",
     inProgress: "进行中",
     paperStage: "纸张预览",
     noDocument: "未选择文档",
@@ -313,6 +359,7 @@ const COPY = {
     printer: "打印机",
     noPrinters: "未发现打印机",
     defaultPrinter: "默认",
+    printerDetected: "已检测到",
     notConnected: "未连接",
     refresh: "刷新",
     batch: "批次",
@@ -337,10 +384,12 @@ const COPY = {
     fit: "适合页面",
     printerDefault: "跟随打印机",
     pageRange: "页码范围",
+    outputPageRange: "输出页范围",
     pageRangePlaceholder: "全部或 1-3, 5",
     advanced: "高级",
     pagesPerSheet: "每张页数",
     pageSet: "奇偶页",
+    outputPageSet: "输出页奇偶",
     allPages: "全部",
     oddPages: "仅奇数页",
     evenPages: "仅偶数页",
@@ -355,8 +404,8 @@ const COPY = {
     savePreset: "保存预设",
     submissionTitle: "系统提交与打印完成分开追踪。",
     submissionBody: "仅在 macOS 报告任务完成后才会显示为已完成。",
-    resume: "继续",
-    pause: "暂停",
+    resumeQueue: "继续提交",
+    pauseQueue: "暂停提交",
     printFiles: (count: number) => `打印 ${count || ""} 个文件`,
     cancel: "取消",
     printHistory: "打印历史",
@@ -387,6 +436,8 @@ const COPY = {
     clearHistory: "清空历史",
     resetAppSettings: "重置应用设置",
     selectPrinter: "开始队列前请先选择打印机。",
+    printerCapabilitiesUnavailable: "暂未读取到打印机能力，请刷新打印机后再打印。",
+    submissionError: (name: string, error: unknown) => `无法提交 ${name}：${String(error)}`,
     addFilesError: (error: unknown) => `无法添加文件：${String(error)}`,
     cancelError: (error: unknown) => `取消任务失败：${String(error)}`,
     dragError: (error: unknown) => `窗口拖动失败：${String(error)}`,
@@ -404,6 +455,73 @@ function formatBytes(bytes: number) {
 
 function createQueueItem(pdf: PdfInfo): QueueItem {
   return { ...pdf, id: crypto.randomUUID(), settings: { ...DEFAULT_SETTINGS }, state: "queued" };
+}
+
+function countPrintableSides(item: QueueItem) {
+  if (!item.pages) return null;
+
+  // CUPS page ranges address output pages. number-up groups document pages first,
+  // so range and odd/even filtering must use the resulting output-page indexes.
+  const outputPages = Math.ceil(item.pages / item.settings.pagesPerSheet);
+  const pageNumbers = new Set<number>();
+  const range = item.settings.pageRange.trim();
+  if (!range) {
+    for (let page = 1; page <= outputPages; page += 1) pageNumbers.add(page);
+  } else {
+    for (const rawPart of range.split(",")) {
+      const part = rawPart.trim();
+      if (!part) return null;
+      const single = part.match(/^(\d+)$/);
+      const interval = part.match(/^(\d+)-(\d+)$/);
+      if (single) {
+        const page = Number(single[1]);
+        if (page < 1) return null;
+        if (page <= outputPages) pageNumbers.add(page);
+        continue;
+      }
+      if (!interval) return null;
+      const start = Number(interval[1]);
+      const end = Number(interval[2]);
+      if (start < 1 || end < 1 || start > end) return null;
+      for (let page = start; page <= Math.min(outputPages, end); page += 1) {
+        pageNumbers.add(page);
+      }
+    }
+  }
+
+  return [...pageNumbers].filter((page) => {
+    if (item.settings.pageSet === "odd") return page % 2 === 1;
+    if (item.settings.pageSet === "even") return page % 2 === 0;
+    return true;
+  }).length;
+}
+
+function estimatePrintUsage(queue: QueueItem[], capabilities: PrinterCapabilities | null) {
+  let printedPages = 0;
+  let sheets = 0;
+  let unknownItems = 0;
+
+  for (const item of queue) {
+    const sidesPerCopy = countPrintableSides(item);
+    if (sidesPerCopy === null) {
+      unknownItems += 1;
+      continue;
+    }
+    const copies = Math.max(1, item.settings.copies);
+    printedPages += sidesPerCopy * copies;
+    const effectiveDuplex =
+      capabilities && !capabilities.supportsDuplex ? "none" : item.settings.duplex;
+    const sheetsPerCopy = effectiveDuplex === "none" ? sidesPerCopy : Math.ceil(sidesPerCopy / 2);
+    sheets += sheetsPerCopy * copies;
+  }
+
+  return { printedPages, sheets, unknownItems };
+}
+
+function supportsPrinterChoice(options: PrinterOption[], candidates: string[]) {
+  return options.some((option) =>
+    candidates.some((candidate) => option.value.toLowerCase() === candidate.toLowerCase()),
+  );
 }
 
 function StatusIcon({ state }: { state: JobState }) {
@@ -426,13 +544,20 @@ function App() {
       ? "zh-CN"
       : "en",
   );
-  const [items, setItems] = useState<QueueItem[]>(() => loadStoredItems(preferences));
+  const [items, setItems] = useState<QueueItem[]>(() => loadStoredBatch(preferences));
+  const [historyItems, setHistoryItems] = useState<QueueItem[]>(() =>
+    loadStoredHistory(preferences),
+  );
+  const archivedTerminalIdsRef = useRef(new Set(historyItems.map((item) => item.id)));
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [selectedPrinter, setSelectedPrinter] = useState("");
   const [printerCapabilities, setPrinterCapabilities] = useState<PrinterCapabilities | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [batchSettings, setBatchSettings] = useState<PrintSettings>({ ...DEFAULT_SETTINGS });
   const [queuePaused, setQueuePaused] = useState(false);
+  const queuePausedRef = useRef(false);
+  const queueRunningRef = useRef(false);
+  const [queueRunning, setQueueRunning] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -451,11 +576,17 @@ function App() {
   };
 
   const selected = items.find((item) => item.id === selectedId) ?? null;
-  const pending = items.filter((item) => ["queued", "failed", "cancelled"].includes(item.state));
+  const pending = items.filter((item) => item.state === "queued");
   const active = items.filter((item) =>
     ["submitting", "submitted", "printing"].includes(item.state),
   );
   const completed = items.filter((item) => item.state === "completed");
+  const history = useMemo(
+    () => [...historyItems].sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0)),
+    [historyItems],
+  );
+  const printEstimate = estimatePrintUsage(pending, printerCapabilities);
+  const printSettingsLocked = queueRunning;
   const visibleItems = useMemo(() => {
     const query = search.trim().toLowerCase();
     return query ? items.filter((item) => item.name.toLowerCase().includes(query)) : items;
@@ -479,8 +610,25 @@ function App() {
   }, [locale]);
 
   useEffect(() => {
+    const freshTerminalItems = items.filter(
+      (item) =>
+        ["completed", "cancelled", "failed"].includes(item.state) &&
+        !archivedTerminalIdsRef.current.has(item.id),
+    );
+    if (!freshTerminalItems.length) return;
+    for (const item of freshTerminalItems) archivedTerminalIdsRef.current.add(item.id);
+    setHistoryItems((current) => {
+      const byId = new Map(current.map((item) => [item.id, item]));
+      for (const item of freshTerminalItems) byId.set(item.id, item);
+      return [...byId.values()];
+    });
+  }, [items]);
+
+  useEffect(() => {
     if (preferences.restoreBatch) {
-      const batch = items.filter((item) => item.state === "queued");
+      const batch = items.filter((item) =>
+        ["queued", "submitting", "submitted", "printing"].includes(item.state),
+      );
       localStorage.setItem("pliflo-batch", JSON.stringify(batch));
     } else {
       localStorage.removeItem("pliflo-batch");
@@ -491,13 +639,13 @@ function App() {
       return;
     }
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    const history = items.filter(
+    const storedHistory = history.filter(
       (item) =>
         ["completed", "cancelled", "failed"].includes(item.state) &&
         (preferences.historyRetention === "forever" || (item.finishedAt ?? 0) >= cutoff),
     );
-    localStorage.setItem("pliflo-history", JSON.stringify(history));
-  }, [items, preferences.historyRetention, preferences.restoreBatch]);
+    localStorage.setItem("pliflo-history", JSON.stringify(storedHistory));
+  }, [history, items, preferences.historyRetention, preferences.restoreBatch]);
 
   const refreshPrinters = useCallback(async () => {
     try {
@@ -541,8 +689,40 @@ function App() {
   useEffect(() => void refreshPrinters(), [refreshPrinters]);
 
   useEffect(() => {
+    const recoverable = historyItems.flatMap((item) => {
+      if (item.state !== "failed" || item.systemJobId) return [];
+      const jobId = recoverStoredJobId(item.error);
+      return jobId ? [{ itemId: item.id, jobId }] : [];
+    });
+
+    for (const { itemId, jobId } of recoverable) {
+      void invoke<"pending" | "completed" | "unknown">("get_print_job_state", { jobId })
+        .then((state) => {
+          if (state === "unknown") return;
+          setHistoryItems((current) =>
+            current.map((item) =>
+              item.id === itemId
+                ? {
+                    ...item,
+                    systemJobId: jobId,
+                    state: state === "completed" ? "completed" : "printing",
+                    error: undefined,
+                    finishedAt: state === "completed" ? (item.finishedAt ?? Date.now()) : undefined,
+                  }
+                : item,
+            ),
+          );
+        })
+        .catch(() => undefined);
+    }
+    // Persisted false failures are reconciled once. Later jobs already store systemJobId directly.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     if (!selectedPrinter) return;
     let cancelled = false;
+    setPrinterCapabilities(null);
     void invoke<PrinterCapabilities>("get_printer_capabilities", { printer: selectedPrinter })
       .then((result) => {
         if (!cancelled) setPrinterCapabilities(result);
@@ -585,6 +765,12 @@ function App() {
             setItems((current) =>
               current.map((candidate) => {
                 if (candidate.id !== item.id) return candidate;
+                if (
+                  candidate.systemJobId !== item.systemJobId ||
+                  !["submitted", "printing"].includes(candidate.state)
+                ) {
+                  return candidate;
+                }
                 if (state === "completed")
                   return { ...candidate, state: "completed", finishedAt: Date.now() };
                 if (state === "pending") return { ...candidate, state: "printing" };
@@ -625,7 +811,14 @@ function App() {
   }
 
   async function submitOne(item: QueueItem) {
-    if (!selectedPrinter) return setNotice(copy.selectPrinter);
+    if (!selectedPrinter) {
+      setNotice(copy.selectPrinter);
+      return false;
+    }
+    if (!printerCapabilities) {
+      setNotice(copy.printerCapabilitiesUnavailable);
+      return false;
+    }
     setItems((current) =>
       current.map((candidate) =>
         candidate.id === item.id
@@ -656,7 +849,9 @@ function App() {
             : candidate,
         ),
       );
+      return true;
     } catch (error) {
+      const message = copy.submissionError(item.name, error);
       setItems((current) =>
         current.map((candidate) =>
           candidate.id === item.id
@@ -664,12 +859,26 @@ function App() {
             : candidate,
         ),
       );
+      setNotice(message);
+      return false;
     }
   }
 
   async function startQueue() {
+    if (queueRunningRef.current) return;
+    queueRunningRef.current = true;
+    setQueueRunning(true);
+    queuePausedRef.current = false;
     if (queuePaused) setQueuePaused(false);
-    for (const item of pending) await submitOne(item);
+    try {
+      for (const item of pending) {
+        const submitted = await submitOne(item);
+        if (!submitted || queuePausedRef.current) break;
+      }
+    } finally {
+      queueRunningRef.current = false;
+      setQueueRunning(false);
+    }
   }
 
   async function cancelJob(item: QueueItem) {
@@ -813,9 +1022,12 @@ function App() {
                   </div>
                   <div className="file-copy">
                     <strong>{item.name}</strong>
-                    <span>
-                      {item.pages ? copy.pages(item.pages) : copy.pagesUnknown} ·{" "}
-                      {formatBytes(item.sizeBytes)}
+                    <span
+                      className={item.state === "failed" && item.error ? "file-error" : undefined}
+                    >
+                      {item.state === "failed" && item.error
+                        ? item.error
+                        : `${item.pages ? copy.pages(item.pages) : copy.pagesUnknown} · ${formatBytes(item.sizeBytes)}`}
                     </span>
                   </div>
                   <div className={`job-state state-${item.state}`}>
@@ -849,20 +1061,22 @@ function App() {
               <span className="surface-label">{copy.paperStage}</span>
               <strong>{selected?.name ?? copy.noDocument}</strong>
             </div>
-            {selected && (
-              <button
-                className="icon-button danger-hover"
-                type="button"
-                title={copy.remove}
-                aria-label={copy.removePdf}
-                onClick={() => {
-                  setItems((current) => current.filter((item) => item.id !== selected.id));
-                  setSelectedId(null);
-                }}
-              >
-                <Trash2 size={15} />
-              </button>
-            )}
+            {selected &&
+              !queueRunning &&
+              !["submitting", "submitted", "printing"].includes(selected.state) && (
+                <button
+                  className="icon-button danger-hover"
+                  type="button"
+                  title={copy.remove}
+                  aria-label={copy.removePdf}
+                  onClick={() => {
+                    setItems((current) => current.filter((item) => item.id !== selected.id));
+                    setSelectedId(null);
+                  }}
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
           </div>
           <div className="preview-stage">
             {selected ? (
@@ -899,6 +1113,7 @@ function App() {
             <button
               className="icon-button"
               type="button"
+              disabled={printSettingsLocked}
               onClick={() => {
                 setBatchSettings({ ...DEFAULT_SETTINGS });
                 if (selected) updateItemSettings(selected.id, DEFAULT_SETTINGS);
@@ -916,6 +1131,7 @@ function App() {
               <select
                 aria-label={copy.printer}
                 value={selectedPrinter}
+                disabled={queueRunning}
                 onChange={(event) => {
                   setPrinterCapabilities(null);
                   setSelectedPrinter(event.target.value);
@@ -935,12 +1151,13 @@ function App() {
               <ChevronDown size={15} />
             </div>
             <div className="printer-meta">
-              <span className="online-dot" />
+              <span className="printer-state-dot" />
               <span>
-                {printers.find((printer) => printer.name === selectedPrinter)?.state ??
-                  copy.notConnected}
+                {printers.find((printer) => printer.name === selectedPrinter)?.state === "detected"
+                  ? copy.printerDetected
+                  : copy.notConnected}
               </span>
-              <button type="button" onClick={() => void refreshPrinters()}>
+              <button type="button" disabled={queueRunning} onClick={() => void refreshPrinters()}>
                 <RefreshCw size={13} /> {copy.refresh}
               </button>
             </div>
@@ -949,6 +1166,7 @@ function App() {
             <button
               className={!selected ? "active" : ""}
               type="button"
+              disabled={printSettingsLocked}
               onClick={() => setSelectedId(null)}
             >
               <Layers3 size={14} /> {copy.batch}
@@ -956,13 +1174,13 @@ function App() {
             <button
               className={selected ? "active" : ""}
               type="button"
-              disabled={!items.length}
+              disabled={!items.length || printSettingsLocked}
               onClick={() => setSelectedId(items[0]?.id ?? null)}
             >
               <FileText size={14} /> {copy.file}
             </button>
           </div>
-          <div className="settings-scroll">
+          <fieldset className="settings-scroll settings-fieldset" disabled={printSettingsLocked}>
             <div className="setting-section">
               <div className="setting-row">
                 <label>{copy.copies}</label>
@@ -1009,7 +1227,7 @@ function App() {
                 </div>
               </div>
               <div className="setting-row">
-                <label>{copy.pageRange}</label>
+                <label>{settings.pagesPerSheet > 1 ? copy.outputPageRange : copy.pageRange}</label>
                 <input
                   className="compact-input"
                   inputMode="numeric"
@@ -1052,7 +1270,7 @@ function App() {
                   <select
                     aria-label={copy.twoSidedPrinting}
                     value={settings.duplex}
-                    disabled={printerCapabilities ? !printerCapabilities.supportsDuplex : false}
+                    disabled={!printerCapabilities || !printerCapabilities.supportsDuplex}
                     onChange={(event) =>
                       changeSetting({ duplex: event.target.value as PrintSettings["duplex"] })
                     }
@@ -1077,7 +1295,7 @@ function App() {
                   <button
                     className={settings.color === "color" ? "active" : ""}
                     type="button"
-                    disabled={printerCapabilities ? !printerCapabilities.supportsColor : false}
+                    disabled={!printerCapabilities || !printerCapabilities.supportsColor}
                     onClick={() => changeSetting({ color: "color" })}
                   >
                     {copy.color}
@@ -1085,7 +1303,7 @@ function App() {
                   <button
                     className={settings.color === "grayscale" ? "active" : ""}
                     type="button"
-                    disabled={printerCapabilities ? !printerCapabilities.supportsColor : false}
+                    disabled={!printerCapabilities || !printerCapabilities.supportsColor}
                     onClick={() => changeSetting({ color: "grayscale" })}
                   >
                     {copy.gray}
@@ -1143,7 +1361,7 @@ function App() {
                   </div>
                 </div>
                 <div className="setting-row">
-                  <label>{copy.pageSet}</label>
+                  <label>{settings.pagesPerSheet > 1 ? copy.outputPageSet : copy.pageSet}</label>
                   <div className="select-shell compact">
                     <select
                       value={settings.pageSet}
@@ -1196,9 +1414,17 @@ function App() {
                         }
                       >
                         <option value="printer">{copy.printerDefault}</option>
-                        <option value="draft">{copy.qualityDraft}</option>
-                        <option value="normal">{copy.qualityNormal}</option>
-                        <option value="high">{copy.qualityHigh}</option>
+                        {supportsPrinterChoice(printerCapabilities.qualities, ["Draft", "3"]) && (
+                          <option value="draft">{copy.qualityDraft}</option>
+                        )}
+                        {supportsPrinterChoice(printerCapabilities.qualities, ["Normal", "4"]) && (
+                          <option value="normal">{copy.qualityNormal}</option>
+                        )}
+                        {supportsPrinterChoice(printerCapabilities.qualities, [
+                          "High",
+                          "Best",
+                          "5",
+                        ]) && <option value="high">{copy.qualityHigh}</option>}
                       </select>
                       <ChevronDown size={14} />
                     </div>
@@ -1206,8 +1432,31 @@ function App() {
                 )}
               </div>
             </details>
-          </div>
+          </fieldset>
           <div className="print-actions">
+            <div className="print-estimate" aria-label={copy.estimatedSheets}>
+              <div>
+                <span>{copy.estimatedSheets}</span>
+                <strong>
+                  {printEstimate.unknownItems === pending.length && pending.length
+                    ? "—"
+                    : printEstimate.sheets}
+                </strong>
+              </div>
+              <div>
+                <span>{copy.printedPages}</span>
+                <strong>
+                  {printEstimate.unknownItems === pending.length && pending.length
+                    ? "—"
+                    : printEstimate.printedPages}
+                </strong>
+              </div>
+              {printEstimate.unknownItems > 0 && (
+                <small>
+                  {copy.estimatePartial} · {printEstimate.unknownItems}
+                </small>
+              )}
+            </div>
             <div className="submission-note">
               <span />
               <p>
@@ -1215,38 +1464,49 @@ function App() {
               </p>
             </div>
             <div className="action-row">
-              {active.length > 0 && (
+              {(queueRunning || queuePaused) && pending.length > 0 && (
                 <button
                   className="secondary-action"
                   type="button"
-                  onClick={() => setQueuePaused((value) => !value)}
+                  onClick={() => {
+                    if (queuePaused) {
+                      void startQueue();
+                      return;
+                    }
+                    queuePausedRef.current = true;
+                    setQueuePaused(true);
+                  }}
                 >
                   {queuePaused ? <Play size={16} /> : <Pause size={16} />}
-                  {queuePaused ? copy.resume : copy.pause}
+                  {queuePaused ? copy.resumeQueue : copy.pauseQueue}
                 </button>
               )}
               <button
                 className="print-button"
                 type="button"
-                disabled={!pending.length || !selectedPrinter}
+                disabled={
+                  !pending.length || !selectedPrinter || !printerCapabilities || queueRunning
+                }
                 onClick={() => void startQueue()}
               >
                 <Printer size={17} /> {copy.printFiles(pending.length)}
               </button>
             </div>
-            {active.map((item) => (
-              <button
-                className="active-job"
-                type="button"
-                key={item.id}
-                onClick={() => void cancelJob(item)}
-              >
-                <span>
-                  <StatusIcon state={item.state} /> {item.name}
-                </span>
-                <small>{copy.cancel}</small>
-              </button>
-            ))}
+            {active
+              .filter((item) => item.systemJobId)
+              .map((item) => (
+                <button
+                  className="active-job"
+                  type="button"
+                  key={item.id}
+                  onClick={() => void cancelJob(item)}
+                >
+                  <span>
+                    <StatusIcon state={item.state} /> {item.name}
+                  </span>
+                  <small>{copy.cancel}</small>
+                </button>
+              ))}
           </div>
         </aside>
       </section>
@@ -1267,24 +1527,22 @@ function App() {
               <X size={17} />
             </button>
           </div>
-          {!items.some((item) => ["completed", "cancelled", "failed"].includes(item.state)) ? (
+          {!history.length ? (
             <div className="drawer-empty">{copy.historyEmpty}</div>
           ) : (
-            items
-              .filter((item) => ["completed", "cancelled", "failed"].includes(item.state))
-              .map((item) => (
-                <div className="history-row" key={item.id}>
-                  <FileText size={16} />
-                  <span>
-                    <strong>{item.name}</strong>
-                    <small>
-                      {stateLabel[item.state]}
-                      {item.systemJobId ? ` · ${item.systemJobId}` : ""}
-                    </small>
-                  </span>
-                  <StatusIcon state={item.state} />
-                </div>
-              ))
+            history.map((item) => (
+              <div className="history-row" key={item.id}>
+                <FileText size={16} />
+                <span>
+                  <strong>{item.name}</strong>
+                  <small>
+                    {stateLabel[item.state]}
+                    {item.systemJobId ? ` · ${item.systemJobId}` : ""}
+                  </small>
+                </span>
+                <StatusIcon state={item.state} />
+              </div>
+            ))
           )}
         </div>
       )}
@@ -1417,11 +1675,12 @@ function App() {
                 className="settings-text-button"
                 type="button"
                 onClick={() => {
-                  setItems((current) =>
-                    current.filter(
-                      (item) => !["completed", "cancelled", "failed"].includes(item.state),
-                    ),
-                  );
+                  for (const item of items) {
+                    if (["completed", "cancelled", "failed"].includes(item.state)) {
+                      archivedTerminalIdsRef.current.add(item.id);
+                    }
+                  }
+                  setHistoryItems([]);
                   localStorage.removeItem("pliflo-history");
                 }}
               >

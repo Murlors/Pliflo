@@ -67,9 +67,140 @@ fn command_output(program: &str, args: &[&str]) -> Result<String, String> {
         .map_err(|error| format!("Could not run {program}: {error}"))?;
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if error.is_empty() { format!("{program} exited with {}", output.status) } else { error });
+        return Err(if error.is_empty() {
+            format!("{program} exited with {}", output.status)
+        } else {
+            error
+        });
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn parse_print_job_id(raw: &str) -> Option<String> {
+    raw.split(|char: char| {
+        !char.is_ascii_alphanumeric() && char != '-' && char != '_' && char != '.'
+    })
+    .find(|part| {
+        part.rsplit_once('-').is_some_and(|(prefix, suffix)| {
+            !prefix.is_empty()
+                && !suffix.is_empty()
+                && suffix.chars().all(|char| char.is_ascii_digit())
+        })
+    })
+    .map(ToOwned::to_owned)
+}
+
+fn print_job_destination(job_id: &str) -> Option<&str> {
+    let (destination, sequence) = job_id.rsplit_once('-')?;
+    (!destination.is_empty()
+        && !sequence.is_empty()
+        && sequence.chars().all(|char| char.is_ascii_digit()))
+    .then_some(destination)
+}
+
+fn lpstat_contains_job(raw: &str, job_id: &str) -> bool {
+    raw.lines()
+        .any(|line| line.split_whitespace().next() == Some(job_id))
+}
+
+fn parse_default_destination<'a>(raw: &str, destinations: &'a [&str]) -> Option<&'a str> {
+    let output = raw.trim();
+    let separator = output
+        .char_indices()
+        .filter(|(_, character)| matches!(character, ':' | '：'))
+        .map(|(index, character)| index + character.len_utf8())
+        .next_back()?;
+    let candidate = output[separator..].trim();
+    destinations
+        .iter()
+        .copied()
+        .find(|destination| *destination == candidate)
+}
+
+fn supports_duplex(options: &[PrinterOption]) -> bool {
+    options.iter().any(|option| {
+        let value = option.value.to_ascii_lowercase();
+        value.contains("duplex") || value.starts_with("two-sided") || value.starts_with("two_sided")
+    })
+}
+
+fn supports_color(options: &[PrinterOption]) -> bool {
+    options.iter().any(|option| {
+        let value = option.value.to_ascii_lowercase();
+        value.contains("color") || value.contains("rgb") || value.contains("cmy")
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn parse_printer_options(output: &str) -> Vec<(String, Vec<PrinterOption>)> {
+    output.lines().filter_map(parse_printer_option).collect()
+}
+
+fn find_printer_option<'a>(
+    groups: &'a [(String, Vec<PrinterOption>)],
+    keys: &[&str],
+) -> Option<(&'a str, &'a [PrinterOption])> {
+    groups.iter().find_map(|(key, options)| {
+        keys.iter()
+            .any(|candidate| key.eq_ignore_ascii_case(candidate))
+            .then_some((key.as_str(), options.as_slice()))
+    })
+}
+
+fn find_option_value<'a>(options: &'a [PrinterOption], candidates: &[&str]) -> Option<&'a str> {
+    options.iter().find_map(|option| {
+        candidates
+            .iter()
+            .any(|candidate| option.value.eq_ignore_ascii_case(candidate))
+            .then_some(option.value.as_str())
+    })
+}
+
+fn printer_assignment(key: &str, value: &str) -> String {
+    format!("{key}={value}")
+}
+
+fn normalize_page_range(raw: &str) -> Result<Option<String>, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+
+    let mut normalized = Vec::new();
+    for part in trimmed.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            return Err("Page range contains an empty segment.".to_string());
+        }
+
+        if let Some((start, end)) = part.split_once('-') {
+            if end.contains('-') {
+                return Err("Page range contains an invalid interval.".to_string());
+            }
+            let start = start
+                .trim()
+                .parse::<u32>()
+                .map_err(|_| "Page range must use page numbers such as 1-3,5.".to_string())?;
+            let end = end
+                .trim()
+                .parse::<u32>()
+                .map_err(|_| "Page range must use page numbers such as 1-3,5.".to_string())?;
+            if start == 0 || end == 0 || start > end {
+                return Err("Page range must contain positive, ascending page numbers.".to_string());
+            }
+            normalized.push(format!("{start}-{end}"));
+        } else {
+            let page = part
+                .parse::<u32>()
+                .map_err(|_| "Page range must use page numbers such as 1-3,5.".to_string())?;
+            if page == 0 {
+                return Err("Page numbers start at 1.".to_string());
+            }
+            normalized.push(page.to_string());
+        }
+    }
+
+    Ok(Some(normalized.join(",")))
 }
 
 #[tauri::command]
@@ -78,13 +209,30 @@ fn inspect_pdfs(paths: Vec<String>) -> Result<Vec<PdfInfo>, String> {
         .into_iter()
         .map(|path| {
             let file_path = Path::new(&path);
-            if file_path.extension().and_then(|ext| ext.to_str()).map(|ext| ext.eq_ignore_ascii_case("pdf")) != Some(true) {
+            if file_path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("pdf"))
+                != Some(true)
+            {
                 return Err(format!("Not a PDF: {path}"));
             }
-            let metadata = fs::metadata(file_path).map_err(|error| format!("Cannot read {path}: {error}"))?;
-            let pages = lopdf::Document::load(file_path).ok().map(|document| document.get_pages().len());
-            let name = file_path.file_name().and_then(|name| name.to_str()).unwrap_or("Document.pdf").to_string();
-            Ok(PdfInfo { path, name, size_bytes: metadata.len(), pages })
+            let metadata =
+                fs::metadata(file_path).map_err(|error| format!("Cannot read {path}: {error}"))?;
+            let pages = lopdf::Document::load(file_path)
+                .ok()
+                .map(|document| document.get_pages().len());
+            let name = file_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Document.pdf")
+                .to_string();
+            Ok(PdfInfo {
+                path,
+                name,
+                size_bytes: metadata.len(),
+                pages,
+            })
         })
         .collect()
 }
@@ -96,15 +244,21 @@ fn list_printers() -> Result<Vec<PrinterInfo>, String> {
     // non-English macOS installations. `-e` emits one destination name per line.
     let destinations = command_output("lpstat", &["-e"])?;
     let default_listing = command_output("lpstat", &["-d"]).unwrap_or_default();
-
-    Ok(destinations
+    let names: Vec<&str> = destinations
         .lines()
         .map(str::trim)
         .filter(|name| !name.is_empty())
+        .collect();
+    let default_destination = parse_default_destination(&default_listing, &names);
+
+    Ok(names
+        .iter()
+        .copied()
         .map(|name| PrinterInfo {
             name: name.to_string(),
-            is_default: default_listing.contains(name),
-            state: "Ready".to_string(),
+            is_default: default_destination == Some(name),
+            // `lpstat -e` confirms a configured destination, not live device readiness.
+            state: "detected".to_string(),
         })
         .collect())
 }
@@ -119,19 +273,60 @@ fn list_printers() -> Result<Vec<PrinterInfo>, String> {
 fn parse_printer_option(line: &str) -> Option<(String, Vec<PrinterOption>)> {
     let (heading, values) = line.split_once(':')?;
     let key = heading.split('/').next()?.trim().to_string();
-    let options = values
-        .split_whitespace()
-        .filter_map(|entry| {
-            let is_default = entry.starts_with('*');
-            let raw = entry.trim_start_matches('*');
-            let (value, label) = raw.split_once('/').unwrap_or((raw, raw));
-            (!value.is_empty()).then(|| PrinterOption {
-                value: value.to_string(),
-                label: label.replace('_', " "),
-                is_default,
+    let raw_tokens: Vec<&str> = values.split_whitespace().collect();
+    let has_labeled_choices = raw_tokens
+        .iter()
+        .any(|token| token.trim_start_matches('*').contains('/'));
+
+    if !has_labeled_choices {
+        let options = raw_tokens
+            .into_iter()
+            .filter_map(|token| {
+                let is_default = token.starts_with('*');
+                let value = token.trim_start_matches('*');
+                (!value.is_empty()).then(|| PrinterOption {
+                    value: value.to_string(),
+                    label: value.replace('_', " "),
+                    is_default,
+                })
             })
-        })
-        .collect();
+            .collect::<Vec<_>>();
+        return (!options.is_empty()).then_some((key, options));
+    }
+
+    let mut options = Vec::new();
+    let mut current: Option<PrinterOption> = None;
+
+    for token in raw_tokens {
+        let starts_choice = token.trim_start_matches('*').contains('/');
+        if starts_choice {
+            if let Some(option) = current.take() {
+                options.push(option);
+            }
+            let is_default = token.starts_with('*');
+            let raw = token.trim_start_matches('*');
+            let (value, label) = raw.split_once('/')?;
+            if !value.is_empty() {
+                current = Some(PrinterOption {
+                    value: value.to_string(),
+                    label: label.replace('_', " "),
+                    is_default,
+                });
+            }
+        } else if let Some(option) = current.as_mut() {
+            if !option.label.is_empty() {
+                option.label.push(' ');
+            }
+            option.label.push_str(&token.replace('_', " "));
+        }
+    }
+    if let Some(option) = current {
+        options.push(option);
+    }
+
+    if options.is_empty() {
+        return None;
+    }
     Some((key, options))
 }
 
@@ -141,17 +336,25 @@ fn get_printer_capabilities(printer: String) -> Result<PrinterCapabilities, Stri
     let output = command_output("lpoptions", &["-p", printer.as_str(), "-l"])?;
     let mut capabilities = PrinterCapabilities::default();
 
-    for line in output.lines() {
-        let Some((key, options)) = parse_printer_option(line) else { continue };
-        match key.as_str() {
-            "PageSize" | "media" => capabilities.media = options,
-            "InputSlot" | "MediaSource" => capabilities.trays = options,
-            "cupsPrintQuality" | "print-quality" => capabilities.qualities = options,
-            "Duplex" => capabilities.supports_duplex = options.len() > 1,
-            "ColorModel" | "ColorMode" | "print-color-mode" => {
-                capabilities.supports_color = options.len() > 1
-            }
-            _ => {}
+    for (key, options) in parse_printer_options(&output) {
+        if key.eq_ignore_ascii_case("PageSize") || key.eq_ignore_ascii_case("media") {
+            capabilities.media = options;
+        } else if key.eq_ignore_ascii_case("InputSlot") || key.eq_ignore_ascii_case("MediaSource") {
+            capabilities.trays = options;
+        } else if key.eq_ignore_ascii_case("cupsPrintQuality")
+            || key.eq_ignore_ascii_case("print-quality")
+        {
+            capabilities.qualities = options;
+        } else if key.eq_ignore_ascii_case("Duplex")
+            || key.eq_ignore_ascii_case("sides")
+            || key.eq_ignore_ascii_case("print-sides")
+        {
+            capabilities.supports_duplex = supports_duplex(&options);
+        } else if key.eq_ignore_ascii_case("ColorModel")
+            || key.eq_ignore_ascii_case("ColorMode")
+            || key.eq_ignore_ascii_case("print-color-mode")
+        {
+            capabilities.supports_color = supports_color(&options);
         }
     }
 
@@ -166,71 +369,342 @@ fn get_printer_capabilities(_printer: String) -> Result<PrinterCapabilities, Str
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-fn submit_print_job(path: String, printer: String, settings: PrintSettings) -> Result<SubmitResult, String> {
-    if !Path::new(&path).is_file() { return Err("The selected PDF no longer exists.".to_string()); }
-    if !settings.page_range.chars().all(|char| char.is_ascii_digit() || matches!(char, ',' | '-' | ' ')) {
-        return Err("Page range contains unsupported characters.".to_string());
+fn submit_print_job(
+    path: String,
+    printer: String,
+    settings: PrintSettings,
+) -> Result<SubmitResult, String> {
+    if !Path::new(&path).is_file() {
+        return Err("The selected PDF no longer exists.".to_string());
     }
+    let page_range =
+        normalize_page_range(&settings.page_range)?.map(|value| format!("page-ranges={value}"));
+    // If capability discovery fails, stop before submission instead of guessing driver options.
+    let driver_options = parse_printer_options(&command_output(
+        "lpoptions",
+        &["-p", printer.as_str(), "-l"],
+    )?);
     let copies = settings.copies.clamp(1, 99).to_string();
-    let duplex = match settings.duplex.as_str() { "long" => "Duplex=DuplexNoTumble", "short" => "Duplex=DuplexTumble", _ => "Duplex=None" };
-    let color = match settings.color.as_str() { "grayscale" => Some("ColorModel=Gray"), "color" => Some("ColorModel=RGB"), _ => None };
-    let orientation = match settings.orientation.as_str() { "portrait" => Some("orientation-requested=3"), "landscape" => Some("orientation-requested=4"), _ => None };
-    let scale = if settings.scale == "actual" { "scaling=100" } else { "fit-to-page" };
-    let media = format!("media={}", settings.media);
-    let page_range = (!settings.page_range.trim().is_empty()).then(|| format!("page-ranges={}", settings.page_range.trim().replace(' ', "")));
-    let pages_per_sheet = format!("number-up={}", match settings.pages_per_sheet { 2 | 4 | 6 | 9 | 16 => settings.pages_per_sheet, _ => 1 });
-    let page_set = match settings.page_set.as_str() { "odd" => Some("page-set=odd"), "even" => Some("page-set=even"), _ => None };
-    let tray = (!settings.tray.is_empty()).then(|| format!("InputSlot={}", settings.tray));
-    let quality = match settings.quality.as_str() { "draft" => Some("print-quality=3"), "normal" => Some("print-quality=4"), "high" => Some("print-quality=5"), _ => None };
-    let mut args = vec!["-d", printer.as_str(), "-n", copies.as_str(), "-o", duplex, "-o", scale, "-o", media.as_str()];
-    if let Some(value) = color { args.extend(["-o", value]); }
-    if let Some(value) = orientation { args.extend(["-o", value]); }
-    if let Some(value) = page_range.as_deref() { args.extend(["-o", value]); }
+    let duplex = if let Some((key, options)) =
+        find_printer_option(&driver_options, &["Duplex", "sides", "print-sides"])
+    {
+        let candidates = match settings.duplex.as_str() {
+            "long" => &["DuplexNoTumble", "two-sided-long-edge"][..],
+            "short" => &["DuplexTumble", "two-sided-short-edge"][..],
+            _ => &["None", "one-sided"][..],
+        };
+        let value = find_option_value(options, candidates)
+            .ok_or_else(|| format!("The selected duplex mode is not supported by {printer}."))?;
+        printer_assignment(key, value)
+    } else {
+        match settings.duplex.as_str() {
+            "long" => "sides=two-sided-long-edge".to_string(),
+            "short" => "sides=two-sided-short-edge".to_string(),
+            _ => "sides=one-sided".to_string(),
+        }
+    };
+    let color = match settings.color.as_str() {
+        "grayscale" | "color" => {
+            if let Some((key, options)) = find_printer_option(
+                &driver_options,
+                &["ColorModel", "ColorMode", "print-color-mode"],
+            ) {
+                let candidates = if settings.color == "grayscale" {
+                    &["Gray", "Grayscale", "Monochrome", "Mono", "Black"][..]
+                } else {
+                    &["RGB", "Color", "CMYK"][..]
+                };
+                let value = find_option_value(options, candidates).ok_or_else(|| {
+                    format!("The selected color mode is not supported by {printer}.")
+                })?;
+                Some(printer_assignment(key, value))
+            } else if settings.color == "grayscale" {
+                Some("print-color-mode=monochrome".to_string())
+            } else {
+                Some("print-color-mode=color".to_string())
+            }
+        }
+        _ => None,
+    };
+    let orientation = match settings.orientation.as_str() {
+        "portrait" => Some("orientation-requested=3"),
+        "landscape" => Some("orientation-requested=4"),
+        _ => None,
+    };
+    let scale = if settings.scale == "actual" {
+        "scaling=100"
+    } else {
+        "fit-to-page"
+    };
+    let media = if let Some((key, options)) =
+        find_printer_option(&driver_options, &["PageSize", "media"])
+    {
+        let value = find_option_value(options, &[settings.media.as_str()])
+            .ok_or_else(|| format!("The selected paper size is not supported by {printer}."))?;
+        printer_assignment(key, value)
+    } else {
+        format!("media={}", settings.media)
+    };
+    let pages_per_sheet = format!(
+        "number-up={}",
+        match settings.pages_per_sheet {
+            2 | 4 | 6 | 9 | 16 => settings.pages_per_sheet,
+            _ => 1,
+        }
+    );
+    let page_set = match settings.page_set.as_str() {
+        "odd" => Some("page-set=odd"),
+        "even" => Some("page-set=even"),
+        _ => None,
+    };
+    let tray = if settings.tray.is_empty() {
+        None
+    } else if let Some((key, options)) =
+        find_printer_option(&driver_options, &["InputSlot", "MediaSource"])
+    {
+        let value = find_option_value(options, &[settings.tray.as_str()])
+            .ok_or_else(|| format!("The selected paper source is not supported by {printer}."))?;
+        Some(printer_assignment(key, value))
+    } else {
+        Some(format!("InputSlot={}", settings.tray))
+    };
+    let quality = match settings.quality.as_str() {
+        "draft" | "normal" | "high" => {
+            if let Some((key, options)) =
+                find_printer_option(&driver_options, &["cupsPrintQuality", "print-quality"])
+            {
+                let candidates = match settings.quality.as_str() {
+                    "draft" => &["Draft", "3"][..],
+                    "high" => &["High", "Best", "5"][..],
+                    _ => &["Normal", "4"][..],
+                };
+                let value = find_option_value(options, candidates).ok_or_else(|| {
+                    format!("The selected print quality is not supported by {printer}.")
+                })?;
+                Some(printer_assignment(key, value))
+            } else {
+                Some(match settings.quality.as_str() {
+                    "draft" => "print-quality=3".to_string(),
+                    "high" => "print-quality=5".to_string(),
+                    _ => "print-quality=4".to_string(),
+                })
+            }
+        }
+        _ => None,
+    };
+    let mut args = vec![
+        "-d",
+        printer.as_str(),
+        "-n",
+        copies.as_str(),
+        "-o",
+        duplex.as_str(),
+        "-o",
+        scale,
+        "-o",
+        media.as_str(),
+    ];
+    if let Some(value) = color.as_deref() {
+        args.extend(["-o", value]);
+    }
+    if let Some(value) = orientation {
+        args.extend(["-o", value]);
+    }
+    if let Some(value) = page_range.as_deref() {
+        args.extend(["-o", value]);
+    }
     args.extend(["-o", pages_per_sheet.as_str()]);
-    if settings.reverse { args.extend(["-o", "outputorder=reverse"]); }
-    if let Some(value) = page_set { args.extend(["-o", value]); }
-    if let Some(value) = tray.as_deref() { args.extend(["-o", value]); }
-    if let Some(value) = quality { args.extend(["-o", value]); }
+    if settings.reverse {
+        args.extend(["-o", "outputorder=reverse"]);
+    }
+    if let Some(value) = page_set {
+        args.extend(["-o", value]);
+    }
+    if let Some(value) = tray.as_deref() {
+        args.extend(["-o", value]);
+    }
+    if let Some(value) = quality.as_deref() {
+        args.extend(["-o", value]);
+    }
     args.push(path.as_str());
     let raw = command_output("lp", &args)?;
-    let job_id = raw.split_whitespace().find(|part| part.contains('-') && part.chars().last().is_some_and(|char| char.is_ascii_digit())).unwrap_or_default().trim_end_matches('.').to_string();
-    if job_id.is_empty() { return Err(format!("macOS accepted the command but returned an unrecognized job id: {raw}")); }
+    let job_id = parse_print_job_id(&raw).ok_or_else(|| {
+        format!("macOS accepted the print job but returned an unrecognized job id: {raw}")
+    })?;
     Ok(SubmitResult { job_id, raw })
 }
 
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
-fn submit_print_job(_path: String, _printer: String, _settings: PrintSettings) -> Result<SubmitResult, String> {
+fn submit_print_job(
+    _path: String,
+    _printer: String,
+    _settings: PrintSettings,
+) -> Result<SubmitResult, String> {
     Err("Printing is implemented for macOS in this release.".to_string())
 }
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
 fn get_print_job_state(job_id: String) -> Result<String, String> {
-    let pending = Command::new("lpstat").args(["-W", "not-completed", "-o", job_id.as_str()]).output().map_err(|error| error.to_string())?;
-    if pending.status.success() && !String::from_utf8_lossy(&pending.stdout).trim().is_empty() { return Ok("pending".to_string()); }
-    let completed = Command::new("lpstat").args(["-W", "completed", "-o", job_id.as_str()]).output().map_err(|error| error.to_string())?;
-    if completed.status.success() && !String::from_utf8_lossy(&completed.stdout).trim().is_empty() { return Ok("completed".to_string()); }
+    let destination = print_job_destination(&job_id)
+        .ok_or_else(|| format!("Unrecognized print job id: {job_id}"))?;
+    let pending = command_output("lpstat", &["-W", "not-completed", "-o", destination])?;
+    if lpstat_contains_job(&pending, &job_id) {
+        return Ok("pending".to_string());
+    }
+    let completed = command_output("lpstat", &["-W", "completed", "-o", destination])?;
+    if lpstat_contains_job(&completed, &job_id) {
+        return Ok("completed".to_string());
+    }
     Ok("unknown".to_string())
 }
 
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
-fn get_print_job_state(_job_id: String) -> Result<String, String> { Ok("unknown".to_string()) }
+fn get_print_job_state(_job_id: String) -> Result<String, String> {
+    Ok("unknown".to_string())
+}
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-fn cancel_print_job(job_id: String) -> Result<(), String> { command_output("cancel", &[job_id.as_str()]).map(|_| ()) }
+fn cancel_print_job(job_id: String) -> Result<(), String> {
+    print_job_destination(&job_id).ok_or_else(|| format!("Unrecognized print job id: {job_id}"))?;
+    command_output("cancel", &[job_id.as_str()]).map(|_| ())
+}
 
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
-fn cancel_print_job(_job_id: String) -> Result<(), String> { Err("Job cancellation is implemented for macOS in this release.".to_string()) }
+fn cancel_print_job(_job_id: String) -> Result<(), String> {
+    Err("Job cancellation is implemented for macOS in this release.".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        lpstat_contains_job, normalize_page_range, parse_default_destination, parse_print_job_id,
+        parse_printer_option, print_job_destination, supports_color, supports_duplex,
+        PrinterOption,
+    };
+
+    fn option(value: &str) -> PrinterOption {
+        PrinterOption {
+            value: value.to_string(),
+            label: value.to_string(),
+            is_default: false,
+        }
+    }
+
+    #[test]
+    fn parses_localized_lp_job_id() {
+        let raw = "请求标识符是 HP_Color_LaserJet_MFP_E78523__ABEB24_-68（1 个文件）";
+        assert_eq!(
+            parse_print_job_id(raw).as_deref(),
+            Some("HP_Color_LaserJet_MFP_E78523__ABEB24_-68")
+        );
+    }
+
+    #[test]
+    fn parses_english_lp_job_id() {
+        let raw = "request id is Office.Printer-42 (1 file(s))";
+        assert_eq!(
+            parse_print_job_id(raw).as_deref(),
+            Some("Office.Printer-42")
+        );
+    }
+
+    #[test]
+    fn rejects_non_job_text() {
+        assert_eq!(parse_print_job_id("printer is ready"), None);
+    }
+
+    #[test]
+    fn derives_destination_and_matches_exact_lpstat_job() {
+        let job_id = "Office-Printer_A-42";
+        assert_eq!(print_job_destination(job_id), Some("Office-Printer_A"));
+        assert!(lpstat_contains_job(
+            "Office-Printer_A-41 user 1024 Thu\nOffice-Printer_A-42 user 2048 Thu",
+            job_id
+        ));
+        assert!(!lpstat_contains_job(
+            "Office-Printer_A-420 user 2048 Thu",
+            job_id
+        ));
+    }
+
+    #[test]
+    fn finds_default_destination_without_parsing_localized_label() {
+        let destinations = ["Office", "HP_Color_LaserJet_MFP_E78523__ABEB24_"];
+        assert_eq!(
+            parse_default_destination(
+                "系统默认目的位置：HP_Color_LaserJet_MFP_E78523__ABEB24_",
+                &destinations
+            ),
+            Some("HP_Color_LaserJet_MFP_E78523__ABEB24_")
+        );
+        assert_eq!(parse_default_destination("no default", &["default"]), None);
+    }
+
+    #[test]
+    fn detects_duplex_and_color_from_values() {
+        assert!(supports_duplex(&[option("None"), option("DuplexNoTumble")]));
+        assert!(!supports_duplex(&[option("None")]));
+        assert!(supports_color(&[option("Gray"), option("RGB")]));
+        assert!(!supports_color(&[option("Gray"), option("BlackOnly")]));
+    }
+
+    #[test]
+    fn parses_driver_choices_with_labels_containing_spaces() {
+        let (key, options) =
+            parse_printer_option("PageSize/Media Size: A4/A4 *Letter/US Letter Legal/US Legal")
+                .unwrap();
+        assert_eq!(key, "PageSize");
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[1].value, "Letter");
+        assert_eq!(options[1].label, "US Letter");
+        assert!(options[1].is_default);
+        assert_eq!(options[2].label, "US Legal");
+    }
+
+    #[test]
+    fn parses_driver_choices_without_display_labels() {
+        let (key, options) =
+            parse_printer_option("Duplex/2-Sided Printing: None *DuplexNoTumble DuplexTumble")
+                .unwrap();
+        assert_eq!(key, "Duplex");
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0].value, "None");
+        assert_eq!(options[1].value, "DuplexNoTumble");
+        assert!(options[1].is_default);
+        assert_eq!(options[2].value, "DuplexTumble");
+    }
+
+    #[test]
+    fn validates_and_normalizes_page_ranges_before_submission() {
+        assert_eq!(
+            normalize_page_range(" 1 - 3, 5 ").unwrap().as_deref(),
+            Some("1-3,5")
+        );
+        assert_eq!(normalize_page_range("   ").unwrap(), None);
+        assert!(normalize_page_range("0").is_err());
+        assert!(normalize_page_range("3-1").is_err());
+        assert!(normalize_page_range("1,,3").is_err());
+        assert!(normalize_page_range("1--3").is_err());
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![inspect_pdfs, list_printers, get_printer_capabilities, submit_print_job, get_print_job_state, cancel_print_job])
+        .invoke_handler(tauri::generate_handler![
+            inspect_pdfs,
+            list_printers,
+            get_printer_capabilities,
+            submit_print_job,
+            get_print_job_state,
+            cancel_print_job
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Pliflo");
 }

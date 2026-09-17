@@ -99,8 +99,7 @@
 }
 
 .app-shell[data-theme="dark"] .preview-toolbar {
-  border-color: var(--console-line);
-  background: #1b1f1b;
+  background: transparent;
 }
 
 .app-shell[data-theme="dark"] .surface-label,
@@ -123,13 +122,8 @@
   background: #242925;
 }
 
-.app-shell[data-theme="dark"] .preview-stage::before {
-  border-color: rgba(255, 255, 255, 0.055);
-}
-
 .app-shell[data-theme="dark"] .preview-footer {
-  border-color: var(--console-line);
-  background: #1b1f1b;
+  background: transparent;
 }
 
 .app-shell[data-theme="dark"] .preview-sheet {
@@ -285,7 +279,7 @@
 }
 
 .app-shell[data-theme="light"] .preview-toolbar {
-  background: #f7f8f3;
+  background: transparent;
 }
 
 .app-shell[data-theme="light"] .preview-stage {
@@ -293,7 +287,7 @@
 }
 
 .app-shell[data-theme="light"] .preview-footer {
-  background: #f3f4ef;
+  background: transparent;
 }
 
 .app-shell[data-theme="light"] .print-actions,
@@ -831,6 +825,10 @@ summary:focus-visible {
   font-size: var(--text-xs);
 }
 
+.file-copy .file-error {
+  color: #b67d67;
+}
+
 .job-state {
   display: flex;
   align-items: center;
@@ -919,20 +917,19 @@ summary:focus-visible {
   display: flex;
   flex-direction: column;
   position: relative;
-  background: var(--paper-2);
+  background: #e3e6de;
   color: var(--ink);
 }
 
 .preview-toolbar {
-  min-height: 78px;
+  min-height: 70px;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--paper-line);
-  background: #eeefe8;
+  padding: 14px 20px 8px;
+  background: transparent;
 }
 
 .document-title {
@@ -976,32 +973,11 @@ summary:focus-visible {
   flex: 1;
   min-height: 0;
   position: relative;
-  padding: 30px 34px 24px;
+  padding: 12px 32px 14px;
   overflow: hidden;
   display: grid;
   place-items: center;
-  background: #dfe1d9;
-}
-
-.preview-stage::before,
-.preview-stage::after {
-  content: "";
-  position: absolute;
-  pointer-events: none;
-}
-
-.preview-stage::before {
-  inset: 15px;
-  border: 1px solid rgba(32, 36, 31, 0.08);
-}
-
-.preview-stage::after {
-  width: 8px;
-  height: 8px;
-  right: 25px;
-  bottom: 25px;
-  border-right: 1px solid rgba(32, 36, 31, 0.22);
-  border-bottom: 1px solid rgba(32, 36, 31, 0.22);
+  background: transparent;
 }
 
 .pdf-preview {
@@ -1010,10 +986,11 @@ summary:focus-visible {
   position: relative;
   z-index: 1;
   border: 0;
+  border-radius: 4px;
   background: #fff;
   box-shadow:
-    0 26px 52px rgba(43, 48, 39, 0.2),
-    0 4px 11px rgba(43, 48, 39, 0.12);
+    0 18px 42px rgba(43, 48, 39, 0.16),
+    0 3px 9px rgba(43, 48, 39, 0.08);
 }
 
 .preview-empty {
@@ -1059,17 +1036,50 @@ summary:focus-visible {
 }
 
 .preview-footer {
-  min-height: 42px;
+  min-height: 36px;
   flex: 0 0 auto;
-  padding: 0 17px;
+  padding: 4px 20px 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-top: 1px solid var(--paper-line);
-  background: #eceee6;
+  background: transparent;
   color: #7a8177;
   font-size: var(--text-xs);
+}
+
+.print-estimate {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 0 10px;
+}
+
+.print-estimate > div {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--console-line);
+  border-radius: 7px;
+  background: var(--control-bg);
+}
+
+.print-estimate span,
+.print-estimate small {
+  color: var(--control-text);
+  font-size: var(--text-xs);
+}
+
+.print-estimate strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--control-text-strong);
+  font-size: var(--text-base);
+  font-variant-numeric: tabular-nums;
+}
+
+.print-estimate small {
+  grid-column: 1 / -1;
+  padding: 0 2px;
 }
 
 .printer-section {
@@ -1137,11 +1147,12 @@ summary:focus-visible {
   font-size: var(--text-xs);
 }
 
-.online-dot {
+.printer-state-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--screen);
+  background: currentColor;
+  opacity: 0.72;
 }
 
 .printer-meta button {
@@ -1191,6 +1202,13 @@ summary:focus-visible {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+}
+
+.settings-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
 }
 
 .setting-row {
