@@ -38,7 +38,7 @@ Pliflo does not upload documents or require a server. Inspection, conversion, pr
 | Markdown                            | Parsed locally with `marked` and rendered with Pliflo's lightweight paged print style                                |
 | PNG / JPG / JPEG / WebP / GIF / BMP | Rendered locally to paper-sized pages with fit-page or actual-size behavior                                          |
 
-Non-PDF sources converge on the same model: **source file → local preparation → temporary printable PDF → existing preview/settings/queue/CUPS path**. Temporary files live only in Pliflo's own system-temp directory and are rebuilt from the original source when a persisted unfinished batch is restored.
+Non-PDF sources converge on the same model: **source file → local preparation → temporary printable PDF → existing preview/settings/queue/CUPS path**. Imported files appear in the batch as soon as metadata inspection finishes; generated documents are then prepared one at a time, with lossless PNG pages transferred through Tauri binary IPC and spooled into Pliflo's system-temp directory instead of retained as a full-document frontend buffer. Superseded or cancelled preparation is discarded and cleaned up, and persisted unfinished batches rebuild temporary artifacts from the original source.
 
 XLSX printing is intentionally pragmatic rather than an Excel-compatible print engine: it uses the worksheet used range, supports visible-sheet selection, fit-width and 100% scaling, and paginates vertically. Excel-specific print areas, repeating print titles and every page-layout feature are not currently reproduced. Image “actual size” uses 96 DPI when reliable physical-density metadata is unavailable.
 

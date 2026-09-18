@@ -7,14 +7,16 @@ const LETTER = { widthPt: 612, heightPt: 792 };
 const RENDER_DPI = 144;
 const EMU_PER_POINT = 12_700;
 
-type FileInfo = { path: string; name: string; sizeBytes: number };
+export type FileInfo = { path: string; name: string; sizeBytes: number };
 type RenderedPage = {
-  dataUrl: string;
+  bytes: Uint8Array;
   pixelWidth: number;
   pixelHeight: number;
   pageWidthPt: number;
   pageHeightPt: number;
 };
+type RenderedPageFile = Omit<RenderedPage, "bytes"> & { path: string };
+type PageSink = (page: RenderedPage) => Promise<void>;
 
 export const SUPPORTED_EXTENSIONS = [
   "pdf",
@@ -47,8 +49,14 @@ async function canvasToPage(
   pageWidthPt: number,
   pageHeightPt: number,
 ): Promise<RenderedPage> {
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (value) => (value ? resolve(value) : reject(new Error("Could not encode rendered page."))),
+      "image/png",
+    );
+  });
   return {
-    dataUrl: canvas.toDataURL("image/jpeg", 0.94),
+    bytes: new Uint8Array(await blob.arrayBuffer()),
     pixelWidth: canvas.width,
     pixelHeight: canvas.height,
     pageWidthPt,
@@ -75,8 +83,30 @@ function pagePixels(widthPt: number, heightPt: number) {
   return { width: Math.round(widthPt * factor), height: Math.round(heightPt * factor) };
 }
 
-async function createPdf(pages: RenderedPage[]) {
-  return invoke<string>("create_printable_pdf", { pages });
+async function createPdfSession() {
+  const session = await invoke<string>("begin_printable_pdf");
+  const pages: RenderedPageFile[] = [];
+  let index = 0;
+  return {
+    add: async (page: RenderedPage) => {
+      pages.push(
+        await invoke<RenderedPageFile>("append_printable_pdf_page", page.bytes, {
+          headers: {
+            "x-pliflo-session": session,
+            "x-pliflo-index": String(index),
+            "x-pliflo-pixel-width": String(page.pixelWidth),
+            "x-pliflo-pixel-height": String(page.pixelHeight),
+            "x-pliflo-page-width-pt": String(page.pageWidthPt),
+            "x-pliflo-page-height-pt": String(page.pageHeightPt),
+          },
+        }),
+      );
+      index += 1;
+    },
+    finish: () => invoke<string>("finalize_printable_pdf", { session, pages }),
+    abort: () => invoke("cleanup_render_session", { session }).catch(() => undefined),
+    count: () => pages.length,
+  };
 }
 
 async function loadImage(url: string) {
@@ -103,20 +133,7 @@ function imageMimeType(path: string) {
   return "application/octet-stream";
 }
 
-async function bytesToDataUrl(bytes: ArrayBuffer, mimeType: string) {
-  const blob = new Blob([bytes], { type: mimeType });
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () =>
-      typeof reader.result === "string"
-        ? resolve(reader.result)
-        : reject(new Error("Could not encode local image."));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function renderImage(path: string, options: DocumentRenderOptions) {
+async function renderImage(path: string, options: DocumentRenderOptions, onPage: PageSink) {
   const bytes = await readLocalFile(path);
   const url = URL.createObjectURL(new Blob([bytes], { type: imageMimeType(path) }));
   let image: HTMLImageElement;
@@ -149,7 +166,7 @@ async function renderImage(path: string, options: DocumentRenderOptions) {
   const width = desiredWidth * scale;
   const height = desiredHeight * scale;
   context.drawImage(image, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
-  return [await canvasToPage(canvas, page.widthPt, page.heightPt)];
+  await onPage(await canvasToPage(canvas, page.widthPt, page.heightPt));
 }
 
 function sanitizeMarkdown(html: string) {
@@ -176,27 +193,31 @@ function sanitizeMarkdown(html: string) {
 async function inlineMarkdownImages(html: string, sourcePath: string) {
   const parsed = new DOMParser().parseFromString(`<main>${html}</main>`, "text/html");
   const sourceDir = sourcePath.slice(0, sourcePath.lastIndexOf("/") + 1);
+  const objectUrls: string[] = [];
   for (const image of parsed.querySelectorAll("img")) {
     const src = image.getAttribute("src")?.trim();
     if (!src || /^https?:/i.test(src) || src.startsWith("//")) {
       image.replaceWith(document.createTextNode(image.getAttribute("alt") ?? ""));
       continue;
     }
-    if (src.startsWith("data:image/")) continue;
+    if (src.startsWith("data:")) {
+      image.replaceWith(document.createTextNode(image.getAttribute("alt") ?? ""));
+      continue;
+    }
     try {
       if (src.startsWith("/") || src.split("/").includes(".."))
         throw new Error("Unsafe image path.");
       const localPath = `${sourceDir}${src}`;
-      const dataUrl = await bytesToDataUrl(
-        await readLocalFile(localPath),
-        imageMimeType(localPath),
+      const objectUrl = URL.createObjectURL(
+        new Blob([await readLocalFile(localPath)], { type: imageMimeType(localPath) }),
       );
-      image.setAttribute("src", dataUrl);
+      objectUrls.push(objectUrl);
+      image.setAttribute("src", objectUrl);
     } catch {
       image.replaceWith(document.createTextNode(image.getAttribute("alt") ?? ""));
     }
   }
-  return parsed.body.firstElementChild?.innerHTML ?? "";
+  return { html: parsed.body.firstElementChild?.innerHTML ?? "", objectUrls };
 }
 
 const MARKDOWN_PAGE = { width: 794, height: 1123, margin: 64, scale: 2 };
@@ -246,32 +267,31 @@ function breakMarkdownLine(context: CanvasRenderingContext2D, text: string, maxW
   return lines;
 }
 
-async function renderMarkdownHtml(html: string) {
+async function renderMarkdownHtml(html: string, onPage: PageSink) {
   const parsed = new DOMParser().parseFromString(`<main>${html}</main>`, "text/html");
   const root = parsed.body.firstElementChild;
-  const pages: HTMLCanvasElement[] = [];
   let current = markdownCanvas();
   let y = MARKDOWN_PAGE.margin;
   const left = MARKDOWN_PAGE.margin;
   const contentWidth = MARKDOWN_PAGE.width - MARKDOWN_PAGE.margin * 2;
   const bottom = MARKDOWN_PAGE.height - MARKDOWN_PAGE.margin;
 
-  const nextPage = () => {
-    pages.push(current.canvas);
+  const nextPage = async () => {
+    await onPage(await canvasToPage(current.canvas, A4.widthPt, A4.heightPt));
     current = markdownCanvas();
     y = MARKDOWN_PAGE.margin;
   };
-  const ensure = (height: number) => {
-    if (y + height > bottom && y > MARKDOWN_PAGE.margin) nextPage();
+  const ensure = async (height: number) => {
+    if (y + height > bottom && y > MARKDOWN_PAGE.margin) await nextPage();
   };
-  const drawLines = (
+  const drawLines = async (
     text: string,
     options: { font: string; lineHeight: number; color?: string; indent?: number; after?: number },
   ) => {
     const indent = options.indent ?? 0;
     current.context.font = options.font;
     const lines = breakMarkdownLine(current.context, text.trim(), contentWidth - indent);
-    ensure(lines.length * options.lineHeight + (options.after ?? 0));
+    await ensure(lines.length * options.lineHeight + (options.after ?? 0));
     current.context.fillStyle = options.color ?? "#171717";
     for (const line of lines) {
       current.context.fillText(line, left + indent, y);
@@ -286,7 +306,7 @@ async function renderMarkdownHtml(html: string) {
       const level = Number(tag[1]);
       const size = [0, 28, 23, 19, 16][level];
       if (y > MARKDOWN_PAGE.margin) y += 8;
-      drawLines(element.textContent ?? "", {
+      await drawLines(element.textContent ?? "", {
         font: `600 ${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`,
         lineHeight: Math.round(size * 1.25),
         after: 10,
@@ -294,7 +314,7 @@ async function renderMarkdownHtml(html: string) {
       continue;
     }
     if (tag === "p") {
-      drawLines(element.textContent ?? "", {
+      await drawLines(element.textContent ?? "", {
         font: '14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         lineHeight: 22,
         after: 12,
@@ -305,7 +325,7 @@ async function renderMarkdownHtml(html: string) {
       let index = 1;
       for (const item of Array.from(element.children)) {
         const prefix = tag === "ol" ? `${index}. ` : "• ";
-        drawLines(`${prefix}${item.textContent ?? ""}`, {
+        await drawLines(`${prefix}${item.textContent ?? ""}`, {
           font: '14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
           lineHeight: 22,
           indent: 16,
@@ -324,7 +344,7 @@ async function renderMarkdownHtml(html: string) {
         contentWidth - 22,
       );
       const height = lines.length * 22 + 16;
-      ensure(height + 10);
+      await ensure(height + 10);
       current.context.fillStyle = "#d4d4d4";
       current.context.fillRect(left, y, 3, height - 8);
       current.context.fillStyle = "#525252";
@@ -342,7 +362,7 @@ async function renderMarkdownHtml(html: string) {
         .split("\n")
         .flatMap((line) => breakMarkdownLine(current.context, line, contentWidth - 24));
       const height = Math.max(38, lines.length * 18 + 24);
-      ensure(height + 14);
+      await ensure(height + 14);
       current.context.fillStyle = "#f5f5f5";
       current.context.fillRect(left, y, contentWidth, height);
       current.context.fillStyle = "#262626";
@@ -365,7 +385,7 @@ async function renderMarkdownHtml(html: string) {
           breakMarkdownLine(current.context, cell.textContent?.trim() ?? "", columnWidth - 16),
         );
         const rowHeight = Math.max(30, ...cellLines.map((lines) => lines.length * 18 + 12));
-        ensure(rowHeight);
+        await ensure(rowHeight);
         for (let column = 0; column < columnCount; column += 1) {
           const x = left + column * columnWidth;
           const cell = cells[column];
@@ -400,11 +420,11 @@ async function renderMarkdownHtml(html: string) {
         );
         const width = image.naturalWidth * scale;
         const height = image.naturalHeight * scale;
-        ensure(height + 14);
+        await ensure(height + 14);
         current.context.drawImage(image, left, y, width, height);
         y += height + 14;
       } catch {
-        drawLines(element.getAttribute("alt") ?? "", {
+        await drawLines(element.getAttribute("alt") ?? "", {
           font: '14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
           lineHeight: 22,
           color: "#737373",
@@ -414,7 +434,7 @@ async function renderMarkdownHtml(html: string) {
       continue;
     }
     if (tag === "hr") {
-      ensure(20);
+      await ensure(20);
       y += 7;
       current.context.strokeStyle = "#d4d4d4";
       current.context.beginPath();
@@ -424,52 +444,48 @@ async function renderMarkdownHtml(html: string) {
       y += 13;
       continue;
     }
-    drawLines(element.textContent ?? "", {
+    await drawLines(element.textContent ?? "", {
       font: '14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       lineHeight: 22,
       after: 12,
     });
   }
-  pages.push(current.canvas);
-  return pages;
+  await onPage(await canvasToPage(current.canvas, A4.widthPt, A4.heightPt));
 }
 
-async function renderMarkdown(path: string) {
+async function renderMarkdown(path: string, onPage: PageSink) {
   const source = new TextDecoder().decode(await readLocalFile(path));
-  const parsed = await inlineMarkdownImages(
+  const prepared = await inlineMarkdownImages(
     sanitizeMarkdown(await marked.parse(source, { gfm: true, breaks: false })),
     path,
   );
-  const canvases = await renderMarkdownHtml(parsed);
-  const pages: RenderedPage[] = [];
-  for (const canvas of canvases) {
-    pages.push(await canvasToPage(canvas, A4.widthPt, A4.heightPt));
+  try {
+    await renderMarkdownHtml(prepared.html, onPage);
+  } finally {
+    for (const objectUrl of prepared.objectUrls) URL.revokeObjectURL(objectUrl);
   }
-  return pages;
 }
 
-async function renderDocx(path: string) {
+async function renderDocx(path: string, onPage: PageSink) {
   const { DocxDocument } = await import("@silurus/ooxml/docx");
   const doc = await DocxDocument.load(await readLocalFile(path), {
     mode: "worker",
   });
   try {
     await doc.waitUntilLayoutComplete();
-    const pages: RenderedPage[] = [];
     for (let index = 0; index < doc.pageCount; index += 1) {
       const size = doc.pageSize(index);
       const canvas = bitmapToCanvas(
         await doc.renderPageToBitmap(index, { width: Math.round(size.widthPt * 2), dpr: 1 }),
       );
-      pages.push(await canvasToPage(canvas, size.widthPt, size.heightPt));
+      await onPage(await canvasToPage(canvas, size.widthPt, size.heightPt));
     }
-    return pages;
   } finally {
     doc.destroy();
   }
 }
 
-async function renderPptx(path: string) {
+async function renderPptx(path: string, onPage: PageSink) {
   const { PptxPresentation } = await import("@silurus/ooxml/pptx");
   const presentation = await PptxPresentation.load(await readLocalFile(path), {
     mode: "worker",
@@ -478,14 +494,12 @@ async function renderPptx(path: string) {
     await presentation.waitUntilLayoutComplete();
     const widthPt = presentation.slideWidth / EMU_PER_POINT;
     const heightPt = presentation.slideHeight / EMU_PER_POINT;
-    const pages: RenderedPage[] = [];
     for (let index = 0; index < presentation.slideCount; index += 1) {
       const canvas = bitmapToCanvas(
         await presentation.renderSlideToBitmap(index, { width: 1600, dpr: 1 }),
       );
-      pages.push(await canvasToPage(canvas, widthPt, heightPt));
+      await onPage(await canvasToPage(canvas, widthPt, heightPt));
     }
-    return pages;
   } finally {
     presentation.destroy();
   }
@@ -506,12 +520,11 @@ function excelColumnPixels(width: number) {
   return Math.max(8, Math.floor(width * 7 + 5));
 }
 
-async function renderXlsx(path: string, options: DocumentRenderOptions) {
+async function renderXlsx(path: string, options: DocumentRenderOptions, onPage: PageSink) {
   const { XlsxWorkbook } = await import("@silurus/ooxml/xlsx");
   const workbook = await XlsxWorkbook.load(await readLocalFile(path), {
     mode: "worker",
   });
-  const pages: RenderedPage[] = [];
   try {
     const sheetIndexes =
       options.xlsxSheet === "all"
@@ -523,6 +536,7 @@ async function renderXlsx(path: string, options: DocumentRenderOptions) {
       const sheet = await workbook.getWorksheet(sheetIndex);
       if (sheet.isChartSheet || sheet.isDialogSheet || sheet.parseError) continue;
       const used = xlsxUsedBounds(sheet);
+      const rowsByIndex = new Map(sheet.rows.map((row) => [row.index, row]));
       const page = { widthPt: A4.heightPt, heightPt: A4.widthPt };
       const pixels = pagePixels(page.widthPt, page.heightPt);
       const margin = 48;
@@ -538,7 +552,7 @@ async function renderXlsx(path: string, options: DocumentRenderOptions) {
         let height = 0;
         let endRow = startRow;
         while (endRow < used.rows) {
-          const row = sheet.rows.find((candidate) => candidate.index === endRow);
+          const row = rowsByIndex.get(endRow);
           const rowHeightPt = row?.height ?? sheet.rowHeights[endRow] ?? sheet.defaultRowHeight;
           const rowHeightPx = Math.max(12, (rowHeightPt * 96) / 72);
           if (endRow > startRow && height + rowHeightPx > availableHeight) break;
@@ -569,11 +583,11 @@ async function renderXlsx(path: string, options: DocumentRenderOptions) {
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.drawImage(rendered, 0, 0);
         rendered.close();
-        pages.push(await canvasToPage(canvas, page.widthPt, page.heightPt));
+        await onPage(await canvasToPage(canvas, page.widthPt, page.heightPt));
         startRow = Math.max(endRow, startRow + 1);
       }
     }
-    return { pages, sheetNames: workbook.sheetNames };
+    return { sheetNames: workbook.sheetNames };
   } finally {
     workbook.destroy();
   }
@@ -582,36 +596,49 @@ async function renderXlsx(path: string, options: DocumentRenderOptions) {
 export async function prepareDocument(
   file: FileInfo,
   options: DocumentRenderOptions,
+  signal?: AbortSignal,
 ): Promise<DocumentInfo> {
+  signal?.throwIfAborted();
   const format = documentFormat(file.path);
   if (!format) throw new Error(`Unsupported file type: ${file.name}`);
   if (format === "pdf") {
     const [pdf] = await invoke<
       Array<{ path: string; name: string; sizeBytes: number; pages: number | null }>
     >("inspect_pdfs", { paths: [file.path] });
+    signal?.throwIfAborted();
     return { ...pdf, printPath: file.path, format, generated: false };
   }
 
-  let pages: RenderedPage[];
-  let sheetNames: string[] | undefined;
-  if (format === "docx") pages = await renderDocx(file.path);
-  else if (format === "pptx") pages = await renderPptx(file.path);
-  else if (format === "xlsx") {
-    const rendered = await renderXlsx(file.path, options);
-    pages = rendered.pages;
-    sheetNames = rendered.sheetNames;
-  } else if (format === "markdown") pages = await renderMarkdown(file.path);
-  else pages = await renderImage(file.path, options);
-
-  const printPath = await createPdf(pages);
-  return {
-    ...file,
-    printPath,
-    pages: pages.length,
-    format,
-    generated: true,
-    sheetNames,
+  const session = await createPdfSession();
+  const onPage: PageSink = async (page) => {
+    signal?.throwIfAborted();
+    await session.add(page);
+    signal?.throwIfAborted();
   };
+  let sheetNames: string[] | undefined;
+  try {
+    if (format === "docx") await renderDocx(file.path, onPage);
+    else if (format === "pptx") await renderPptx(file.path, onPage);
+    else if (format === "xlsx") {
+      const rendered = await renderXlsx(file.path, options, onPage);
+      sheetNames = rendered.sheetNames;
+    } else if (format === "markdown") await renderMarkdown(file.path, onPage);
+    else await renderImage(file.path, options, onPage);
+
+    signal?.throwIfAborted();
+    const printPath = await session.finish();
+    return {
+      ...file,
+      printPath,
+      pages: session.count(),
+      format,
+      generated: true,
+      sheetNames,
+    };
+  } catch (error) {
+    await session.abort();
+    throw error;
+  }
 }
 
 export async function inspectSupportedFiles(paths: string[]) {

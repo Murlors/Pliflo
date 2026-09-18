@@ -1,6 +1,7 @@
 export const COPY = {
   en: {
     ready: "Ready",
+    preparing: "Preparing",
     active: "Active",
     done: "Done",
     submitting: "Submitting",
@@ -138,6 +139,7 @@ export const COPY = {
   },
   "zh-CN": {
     ready: "待打印",
+    preparing: "正在准备",
     active: "进行中",
     done: "已完成",
     submitting: "提交中",

@@ -24,6 +24,7 @@ type QueuePanelProps = {
     pages: (count: number) => string;
     pagesUnknown: string;
     ready: string;
+    preparing: string;
     inProgress: string;
     done: string;
   };
@@ -125,7 +126,7 @@ export function QueuePanel({
                 className={`job-state flex items-center gap-1 whitespace-nowrap px-1.5 py-1 text-xs state-${item.state}`}
               >
                 <StatusIcon state={item.state} />
-                <span>{stateLabel[item.state]}</span>
+                <span>{item.preparing ? labels.preparing : stateLabel[item.state]}</span>
               </div>
               <MoreHorizontal size={16} />
             </button>

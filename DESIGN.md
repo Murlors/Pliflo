@@ -79,6 +79,7 @@ The macOS release uses an overlay title bar with the native traffic lights above
 
 - A source document entering the batch is not yet a print job.
 - Non-PDF formats are prepared locally into a temporary printable PDF so preview, print settings, estimates and queue behavior remain visually and operationally consistent.
+- Large or complex files should enter the queue immediately with a visible preparation state. They become printable only after the local artifact is ready; preparation progress must not be presented as print progress.
 - Format-specific controls stay inside the existing settings flow and appear only when relevant. XLSX exposes sheet/scaling choices; images expose sizing choices. Do not add persistent format toolbars or additional workspace columns.
 - Preparation failures stay visible as document-level error states without blocking already prepared documents in the batch.
 - `submitted` means the operating system accepted the job.

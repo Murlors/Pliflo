@@ -48,7 +48,8 @@ src-tauri/
 - PDF sources use the original file directly. DOCX, PPTX, XLSX, Markdown and images are prepared locally into temporary PDFs before reusing the shared settings, estimates, queue and CUPS path.
 - Prefer `@silurus/ooxml` for OOXML parsing/rendering where its API provides the needed layout data. Do not imply unsupported Office fidelity: XLSX pagination is Pliflo's used-range/scale model rather than a complete Excel print engine.
 - Generated artifacts belong only under Pliflo's system-temp render root. Remove superseded artifacts when safe, rebuild them from the source after restoring a persisted unfinished batch, and never delete or modify original user files.
-- Keep preparation asynchronous and bounded so importing many files does not create unbounded concurrent WASM/render work or memory use.
+- Keep preparation asynchronous and bounded so importing many files does not create unbounded concurrent WASM/render work or memory use. Generated pages should be transferred as raw binary data and spooled incrementally to the temp render session rather than retained for the whole document in frontend memory or serialized through Base64.
+- Preparation invalidated by file removal or format-specific option changes should stop cooperatively when possible; stale results must never replace newer settings or resurrect a removed queue item.
 - A corrupted, encrypted or otherwise unreadable source must remain visible as a failed document without aborting preparation of the rest of the batch.
 - Format-specific settings should be incremental additions to the existing settings panel and appear only for formats that support them.
 

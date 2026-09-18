@@ -1,8 +1,8 @@
-use base64::Engine;
 use lopdf::{dictionary, Dictionary, Document, Object, Stream};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
+    io::Cursor,
     path::{Path, PathBuf},
     process::Command,
     sync::atomic::{AtomicU64, Ordering},
@@ -78,10 +78,10 @@ struct FileInfo {
     size_bytes: u64,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RenderedPageInput {
-    data_url: String,
+struct RenderedPageFile {
+    path: String,
     pixel_width: u32,
     pixel_height: u32,
     page_width_pt: f32,
@@ -105,44 +105,79 @@ fn create_rendered_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-fn decode_canvas_jpeg(data_url: &str) -> Result<Vec<u8>, String> {
-    let encoded = data_url
-        .strip_prefix("data:image/jpeg;base64,")
-        .or_else(|| data_url.strip_prefix("data:image/jpg;base64,"))
-        .ok_or_else(|| "Rendered page must be a JPEG data URL.".to_string())?;
-    base64::engine::general_purpose::STANDARD
-        .decode(encoded)
-        .map_err(|error| format!("Cannot decode rendered page: {error}"))
+fn decode_png_rgb(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32), String> {
+    let mut decoder = png::Decoder::new(Cursor::new(bytes));
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = decoder
+        .read_info()
+        .map_err(|error| format!("Cannot decode rendered PNG: {error}"))?;
+    let mut buffer = vec![0; reader.output_buffer_size()];
+    let info = reader
+        .next_frame(&mut buffer)
+        .map_err(|error| format!("Cannot decode rendered PNG: {error}"))?;
+    let source = &buffer[..info.buffer_size()];
+    let mut rgb = Vec::with_capacity(info.width as usize * info.height as usize * 3);
+    match info.color_type {
+        png::ColorType::Rgb => rgb.extend_from_slice(source),
+        png::ColorType::Rgba => {
+            for pixel in source.chunks_exact(4) {
+                let alpha = pixel[3] as u16;
+                for channel in &pixel[..3] {
+                    rgb.push(((*channel as u16 * alpha + 255 * (255 - alpha) + 127) / 255) as u8);
+                }
+            }
+        }
+        png::ColorType::Grayscale => {
+            for gray in source {
+                rgb.extend_from_slice(&[*gray, *gray, *gray]);
+            }
+        }
+        png::ColorType::GrayscaleAlpha => {
+            for pixel in source.chunks_exact(2) {
+                let alpha = pixel[1] as u16;
+                let gray = (pixel[0] as u16 * alpha + 255 * (255 - alpha) + 127) / 255;
+                rgb.extend_from_slice(&[gray as u8, gray as u8, gray as u8]);
+            }
+        }
+        png::ColorType::Indexed => return Err("Rendered PNG used an unsupported indexed palette.".to_string()),
+    }
+    Ok((rgb, info.width, info.height))
 }
 
-fn add_jpeg_page(
+fn add_png_page(
     doc: &mut Document,
     pages_id: lopdf::ObjectId,
-    input: RenderedPageInput,
+    png: &[u8],
+    expected_pixel_width: u32,
+    expected_pixel_height: u32,
+    page_width_pt: f32,
+    page_height_pt: f32,
 ) -> Result<lopdf::ObjectId, String> {
-    if input.pixel_width == 0
-        || input.pixel_height == 0
-        || input.page_width_pt <= 0.0
-        || input.page_height_pt <= 0.0
+    if expected_pixel_width == 0
+        || expected_pixel_height == 0
+        || page_width_pt <= 0.0
+        || page_height_pt <= 0.0
     {
         return Err("Rendered page dimensions are invalid.".to_string());
     }
-    let jpeg = decode_canvas_jpeg(&input.data_url)?;
+    let (rgb, pixel_width, pixel_height) = decode_png_rgb(png)?;
+    if pixel_width != expected_pixel_width || pixel_height != expected_pixel_height {
+        return Err("Rendered PNG dimensions do not match page metadata.".to_string());
+    }
     let image_id = doc.add_object(Stream::new(
         dictionary! {
             "Type" => "XObject",
             "Subtype" => "Image",
-            "Width" => input.pixel_width as i64,
-            "Height" => input.pixel_height as i64,
+            "Width" => pixel_width as i64,
+            "Height" => pixel_height as i64,
             "ColorSpace" => "DeviceRGB",
             "BitsPerComponent" => 8,
-            "Filter" => "DCTDecode",
         },
-        jpeg,
+        rgb,
     ));
     let content = format!(
         "q\n{} 0 0 {} 0 0 cm\n/Im0 Do\nQ\n",
-        input.page_width_pt, input.page_height_pt
+        page_width_pt, page_height_pt
     );
     let content_id = doc.add_object(Stream::new(Dictionary::new(), content.into_bytes()));
     let resources_id = doc.add_object(dictionary! {
@@ -155,8 +190,8 @@ fn add_jpeg_page(
         "MediaBox" => vec![
             0.into(),
             0.into(),
-            Object::Real(input.page_width_pt),
-            Object::Real(input.page_height_pt),
+            Object::Real(page_width_pt),
+            Object::Real(page_height_pt),
         ],
         "Contents" => content_id,
     }))
@@ -198,18 +233,99 @@ fn read_local_file(path: String) -> Result<tauri::ipc::Response, String> {
     Ok(tauri::ipc::Response::new(bytes))
 }
 
+fn checked_render_session(session: &str) -> Result<PathBuf, String> {
+    let root = rendered_root();
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|error| format!("Cannot access render cache: {error}"))?;
+    let canonical_session = PathBuf::from(session)
+        .canonicalize()
+        .map_err(|error| format!("Cannot access render session: {error}"))?;
+    if !canonical_session.starts_with(&canonical_root) || !canonical_session.is_dir() {
+        return Err("Invalid render session.".to_string());
+    }
+    Ok(canonical_session)
+}
+
 #[tauri::command]
-fn create_printable_pdf(pages: Vec<RenderedPageInput>) -> Result<String, String> {
+fn begin_printable_pdf() -> Result<String, String> {
+    Ok(create_rendered_dir()?.to_string_lossy().to_string())
+}
+
+fn request_header<'a>(request: &'a tauri::ipc::Request<'_>, name: &str) -> Result<&'a str, String> {
+    request
+        .headers()
+        .get(name)
+        .ok_or_else(|| format!("Missing render page header: {name}"))?
+        .to_str()
+        .map_err(|_| format!("Invalid render page header: {name}"))
+}
+
+fn parsed_request_header<T>(request: &tauri::ipc::Request<'_>, name: &str) -> Result<T, String>
+where
+    T: std::str::FromStr,
+{
+    request_header(request, name)?
+        .parse()
+        .map_err(|_| format!("Invalid render page header: {name}"))
+}
+
+#[tauri::command]
+fn append_printable_pdf_page(request: tauri::ipc::Request<'_>) -> Result<RenderedPageFile, String> {
+    let session = request_header(&request, "x-pliflo-session")?.to_string();
+    let index: usize = parsed_request_header(&request, "x-pliflo-index")?;
+    let pixel_width: u32 = parsed_request_header(&request, "x-pliflo-pixel-width")?;
+    let pixel_height: u32 = parsed_request_header(&request, "x-pliflo-pixel-height")?;
+    let page_width_pt: f32 = parsed_request_header(&request, "x-pliflo-page-width-pt")?;
+    let page_height_pt: f32 = parsed_request_header(&request, "x-pliflo-page-height-pt")?;
+    if pixel_width == 0 || pixel_height == 0 || page_width_pt <= 0.0 || page_height_pt <= 0.0
+    {
+        return Err("Rendered page dimensions are invalid.".to_string());
+    }
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes,
+        _ => return Err("Rendered page must use binary IPC.".to_string()),
+    };
+    let dir = checked_render_session(&session)?;
+    let path = dir.join(format!("page-{index:06}.png"));
+    fs::write(&path, bytes)
+        .map_err(|error| format!("Cannot cache rendered page: {error}"))?;
+    Ok(RenderedPageFile {
+        path: path.to_string_lossy().to_string(),
+        pixel_width,
+        pixel_height,
+        page_width_pt,
+        page_height_pt,
+    })
+}
+
+#[tauri::command]
+fn finalize_printable_pdf(session: String, pages: Vec<RenderedPageFile>) -> Result<String, String> {
     if pages.is_empty() {
         return Err("The document did not produce any printable pages.".to_string());
     }
-    let dir = create_rendered_dir()?;
+    let dir = checked_render_session(&session)?;
     let output = dir.join("printable.pdf");
     let mut doc = Document::with_version("1.5");
     let pages_id = doc.new_object_id();
     let mut page_ids = Vec::with_capacity(pages.len());
-    for page in pages {
-        page_ids.push(add_jpeg_page(&mut doc, pages_id, page)?);
+    for page in &pages {
+        let path = PathBuf::from(&page.path)
+            .canonicalize()
+            .map_err(|error| format!("Cannot access rendered page: {error}"))?;
+        if path.parent() != Some(dir.as_path()) {
+            return Err("Rendered page is outside its render session.".to_string());
+        }
+        let png = fs::read(&path).map_err(|error| format!("Cannot read rendered page: {error}"))?;
+        page_ids.push(add_png_page(
+            &mut doc,
+            pages_id,
+            &png,
+            page.pixel_width,
+            page.pixel_height,
+            page.page_width_pt,
+            page.page_height_pt,
+        )?);
     }
     doc.objects.insert(
         pages_id,
@@ -227,7 +343,16 @@ fn create_printable_pdf(pages: Vec<RenderedPageInput>) -> Result<String, String>
     doc.compress();
     doc.save(&output)
         .map_err(|error| format!("Cannot save printable PDF: {error}"))?;
+    for page in pages {
+        let _ = fs::remove_file(page.path);
+    }
     Ok(output.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn cleanup_render_session(session: String) -> Result<(), String> {
+    let dir = checked_render_session(&session)?;
+    fs::remove_dir_all(dir).map_err(|error| format!("Cannot remove render session: {error}"))
 }
 
 #[tauri::command]
@@ -901,7 +1026,10 @@ pub fn run() {
             inspect_files,
             read_local_file,
             inspect_pdfs,
-            create_printable_pdf,
+            begin_printable_pdf,
+            append_printable_pdf_page,
+            finalize_printable_pdf,
+            cleanup_render_session,
             cleanup_printable_pdf,
             cleanup_stale_printable_pdfs,
             list_printers,

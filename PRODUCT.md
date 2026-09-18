@@ -32,6 +32,7 @@ The product is a focused desktop utility used during routine document handling. 
 - Markdown uses a lightweight local paged renderer. Remote Markdown images are not fetched; local relative images may be embedded during preparation.
 - Images support fit-page and actual-size preparation; actual size assumes 96 DPI when physical-density metadata is unavailable.
 - Generated printable artifacts are ephemeral, stay under Pliflo-owned system-temp storage, and are regenerated from the source after an unfinished batch is restored.
+- Imported files become visible before expensive rendering completes. Local preparation is bounded, page output is spooled incrementally, and obsolete preparation is cancellable so large files do not monopolize frontend memory or keep stale work running unnecessarily.
 - Printer discovery, presets, queue management, cancellation, history and explicit error states.
 - Every document is submitted as its own system print job by default after local preparation succeeds.
 - macOS printing uses the local CUPS command-line interface to keep runtime size and maintenance cost low.

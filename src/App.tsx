@@ -3,7 +3,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
 import { CircleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DEFAULT_PREFERENCES, DEFAULT_RENDER_OPTIONS, DEFAULT_SETTINGS } from "./app/constants";
+import { DEFAULT_PREFERENCES, DEFAULT_SETTINGS } from "./app/constants";
 import { COPY } from "./app/i18n";
 import type {
   AppPreferences,
@@ -54,7 +54,11 @@ function App() {
     loadStoredHistory(preferences),
   );
   const archivedTerminalIdsRef = useRef(new Set(historyItems.map((item) => item.id)));
-  const restoredArtifactsRef = useRef(false);
+  const preparingIdRef = useRef<string | null>(null);
+  const preparationControllerRef = useRef<AbortController | null>(null);
+  const preparationVersionsRef = useRef(new Map<string, number>());
+  const pendingRenderOptionsRef = useRef(new Map<string, DocumentRenderOptions>());
+  const [preparationTick, setPreparationTick] = useState(0);
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [selectedPrinter, setSelectedPrinter] = useState("");
   const [printerCapabilities, setPrinterCapabilities] = useState<PrinterCapabilities | null>(null);
@@ -82,7 +86,8 @@ function App() {
   };
 
   const selected = items.find((item) => item.id === selectedId) ?? null;
-  const pending = items.filter((item) => item.state === "queued");
+  const queuedItems = items.filter((item) => item.state === "queued");
+  const pending = queuedItems.filter((item) => !item.preparing);
   const active = items.filter((item) =>
     ["submitting", "submitted", "printing"].includes(item.state),
   );
@@ -91,7 +96,7 @@ function App() {
     () => [...historyItems].sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0)),
     [historyItems],
   );
-  const printEstimate = estimatePrintUsage(pending, printerCapabilities);
+  const printEstimate = estimatePrintUsage(queuedItems, printerCapabilities);
   const visibleItems = useMemo(() => {
     const query = search.trim().toLowerCase();
     return query ? items.filter((item) => item.name.toLowerCase().includes(query)) : items;
@@ -119,43 +124,80 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (restoredArtifactsRef.current) return;
-    restoredArtifactsRef.current = true;
-    const restored = items.filter((item) => item.state === "queued" && item.generated);
-    for (const item of restored) {
-      void inspectSupportedFiles([item.path])
-        .then(([file]) => {
-          if (!file) throw new Error("The source file is no longer available.");
-          return prepareDocument(file, item.renderOptions);
-        })
-        .then((prepared) => {
+    if (preparingIdRef.current) return;
+    const item = items.find((candidate) => candidate.state === "queued" && candidate.preparing);
+    if (!item) return;
+
+    const version = preparationVersionsRef.current.get(item.id) ?? 0;
+    const renderOptions = pendingRenderOptionsRef.current.get(item.id) ?? item.renderOptions;
+    const previousArtifact = item.printPath
+      ? { generated: item.generated, printPath: item.printPath }
+      : null;
+    const controller = new AbortController();
+    preparingIdRef.current = item.id;
+    preparationControllerRef.current = controller;
+
+    void prepareDocument(
+      { path: item.path, name: item.name, sizeBytes: item.sizeBytes },
+      renderOptions,
+      controller.signal,
+    )
+      .then(async (prepared) => {
+        if ((preparationVersionsRef.current.get(item.id) ?? 0) !== version) {
+          await cleanupGeneratedDocument(prepared);
+          return;
+        }
+        if (previousArtifact) await cleanupGeneratedDocument(previousArtifact);
+        pendingRenderOptionsRef.current.delete(item.id);
+        setItems((current) =>
+          current.map((candidate) =>
+            candidate.id === item.id
+              ? {
+                  ...candidate,
+                  ...prepared,
+                  renderOptions,
+                  preparing: false,
+                  error: undefined,
+                  finishedAt: undefined,
+                }
+              : candidate,
+          ),
+        );
+      })
+      .catch((error) => {
+        if ((preparationVersionsRef.current.get(item.id) ?? 0) !== version) return;
+        pendingRenderOptionsRef.current.delete(item.id);
+        if (previousArtifact) {
           setItems((current) =>
             current.map((candidate) =>
-              candidate.id === item.id
-                ? { ...candidate, ...prepared, preparing: false, error: undefined }
-                : candidate,
+              candidate.id === item.id ? { ...candidate, preparing: false } : candidate,
             ),
           );
-        })
-        .catch((error) => {
-          setItems((current) =>
-            current.map((candidate) =>
-              candidate.id === item.id
-                ? {
-                    ...candidate,
-                    preparing: false,
-                    state: "failed",
-                    error: String(error),
-                    finishedAt: Date.now(),
-                  }
-                : candidate,
-            ),
-          );
-        });
-    }
-    // Restored generated documents must rebuild their ephemeral printable artifact once per launch.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+          setNotice(copy.addFilesError(error));
+          return;
+        }
+        setItems((current) =>
+          current.map((candidate) =>
+            candidate.id === item.id
+              ? {
+                  ...candidate,
+                  preparing: false,
+                  state: "failed",
+                  error: String(error),
+                  finishedAt: Date.now(),
+                }
+              : candidate,
+          ),
+        );
+      })
+      .finally(() => {
+        preparingIdRef.current = null;
+        if (preparationControllerRef.current === controller) {
+          preparationControllerRef.current = null;
+        }
+        setPreparationTick((value) => value + 1);
+      });
+  }, [copy, items, preparationTick]);
 
   useEffect(() => {
     const freshTerminalItems = items.filter(
@@ -220,41 +262,27 @@ function App() {
       try {
         const files = await inspectSupportedFiles(paths);
         if (!files.length) return;
-        const results = new Array<QueueItem | null>(files.length).fill(null);
-        let cursor = 0;
-        const prepareNext = async () => {
-          while (cursor < files.length) {
-            const index = cursor;
-            cursor += 1;
-            const file = files[index];
-            try {
-              results[index] = createQueueItem(await prepareDocument(file, DEFAULT_RENDER_OPTIONS));
-            } catch (error) {
-              const format = documentFormat(file.path);
-              if (!format) continue;
-              results[index] = {
-                ...createQueueItem({
-                  ...file,
-                  printPath: "",
-                  pages: null,
-                  format,
-                  generated: false,
-                }),
-                state: "failed",
-                error: String(error),
-                finishedAt: Date.now(),
-              };
-            }
-          }
-        };
-        await Promise.all(Array.from({ length: Math.min(2, files.length) }, prepareNext));
-        const fresh = results.filter((item): item is QueueItem => item !== null);
+        const fresh = files.flatMap((file) => {
+          const format = documentFormat(file.path);
+          if (!format) return [];
+          return [
+            {
+              ...createQueueItem({
+                ...file,
+                printPath: "",
+                pages: null,
+                format,
+                generated: format !== "pdf",
+              }),
+              preparing: true,
+            },
+          ];
+        });
         if (fresh.length) {
           setItems((current) => [...current, ...fresh]);
           setSelectedId((current) => current ?? fresh[0]?.id ?? null);
         }
-        const failedCount = fresh.filter((item) => item.state === "failed").length;
-        setNotice(failedCount ? copy.addFilesFailed(failedCount) : null);
+        setNotice(null);
       } catch (error) {
         setNotice(copy.addFilesError(error));
       }
@@ -388,25 +416,19 @@ function App() {
     );
   }
 
-  async function updateRenderOptions(id: string, patch: Partial<DocumentRenderOptions>) {
+  function updateRenderOptions(id: string, patch: Partial<DocumentRenderOptions>) {
     const item = items.find((candidate) => candidate.id === id);
     if (!item || !["xlsx", "image"].includes(item.format)) return;
-    const nextOptions = { ...item.renderOptions, ...patch };
-    try {
-      const [file] = await inspectSupportedFiles([item.path]);
-      if (!file) throw new Error("The source file is no longer available.");
-      const prepared = await prepareDocument(file, nextOptions);
-      await cleanupGeneratedDocument(item);
-      setItems((current) =>
-        current.map((candidate) =>
-          candidate.id === id
-            ? { ...candidate, ...prepared, renderOptions: nextOptions, error: undefined }
-            : candidate,
-        ),
-      );
-    } catch (error) {
-      setNotice(copy.addFilesError(error));
-    }
+    const baseOptions = pendingRenderOptionsRef.current.get(id) ?? item.renderOptions;
+    const nextOptions = { ...baseOptions, ...patch };
+    preparationVersionsRef.current.set(id, (preparationVersionsRef.current.get(id) ?? 0) + 1);
+    pendingRenderOptionsRef.current.set(id, nextOptions);
+    if (preparingIdRef.current === id) preparationControllerRef.current?.abort();
+    setItems((current) =>
+      current.map((candidate) =>
+        candidate.id === id ? { ...candidate, preparing: true, error: undefined } : candidate,
+      ),
+    );
   }
 
   async function submitOne(item: QueueItem) {
@@ -565,6 +587,12 @@ function App() {
           labels={copy}
           onRemove={(id) => {
             const item = items.find((candidate) => candidate.id === id);
+            preparationVersionsRef.current.set(
+              id,
+              (preparationVersionsRef.current.get(id) ?? 0) + 1,
+            );
+            if (preparingIdRef.current === id) preparationControllerRef.current?.abort();
+            pendingRenderOptionsRef.current.delete(id);
             if (item) void cleanupGeneratedDocument(item);
             setItems((current) => current.filter((candidate) => candidate.id !== id));
             setSelectedId(null);
@@ -600,7 +628,7 @@ function App() {
           onSelectFile={() => setSelectedId(items[0]?.id ?? null)}
           onChangeSetting={changeSetting}
           onChangeRenderOptions={(patch) => {
-            if (selected) void updateRenderOptions(selected.id, patch);
+            if (selected) updateRenderOptions(selected.id, patch);
           }}
           onStartQueue={() => void startQueue()}
           onToggleQueuePause={() => {
