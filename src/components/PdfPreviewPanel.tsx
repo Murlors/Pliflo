@@ -52,10 +52,10 @@ export function PdfPreviewPanel({
         )}
       </div>
 
-      <div className="preview-stage relative grid min-h-0 flex-1 place-items-center overflow-hidden px-8 pb-3.5 pt-3">
+      <div className="preview-stage relative grid min-h-0 flex-1 place-items-center overflow-hidden">
         {selected?.printPath ? (
           <iframe
-            className="pdf-preview relative z-1 h-full w-[min(100%,690px)] border-0 rounded"
+            className="pdf-preview relative z-1 h-full w-full border-0"
             title={labels.previewTitle(selected.name)}
             src={convertFileSrc(selected.printPath)}
           />

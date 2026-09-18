@@ -761,16 +761,22 @@ summary:focus-visible {
 
 .select-shell select {
   width: 100%;
+  height: 100%;
   appearance: none;
   border: 0;
   outline: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: normal;
   color: #dce2da;
   background: transparent;
 }
 
 .select-shell svg:last-child {
   position: absolute;
+  top: 50%;
   right: 9px;
+  transform: translateY(-50%);
   pointer-events: none;
   color: #747e75;
 }
@@ -817,6 +823,10 @@ summary:focus-visible {
 }
 
 .scope-switch button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
   color: var(--control-muted);
 }
 
@@ -847,6 +857,13 @@ summary:focus-visible {
 .stepper button,
 .stepper span {
   color: var(--control-text);
+}
+
+.stepper button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .stepper button:hover {
@@ -895,9 +912,13 @@ summary:focus-visible {
 }
 
 .segmented button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 43px;
   height: 24px;
   padding: 0 7px;
+  line-height: 1;
   color: var(--control-muted);
   font-size: var(--text-xs);
 }

@@ -203,7 +203,7 @@ export function PrintSettingsPanel({
 
       <div className="scope-switch mx-3.25 mt-2.5 flex p-0.75">
         <button
-          className={`h-7.25 flex-1 justify-center gap-1.25 text-xs font-620 ${!selected ? "active" : ""}`}
+          className={`flex h-7.25 flex-1 items-center justify-center gap-1.25 text-xs font-620 ${!selected ? "active" : ""}`}
           type="button"
           disabled={locked}
           onClick={onSelectBatch}
@@ -211,7 +211,7 @@ export function PrintSettingsPanel({
           <Layers3 size={14} /> {labels.batch}
         </button>
         <button
-          className={`h-7.25 flex-1 justify-center gap-1.25 text-xs font-620 ${selected ? "active" : ""}`}
+          className={`flex h-7.25 flex-1 items-center justify-center gap-1.25 text-xs font-620 ${selected ? "active" : ""}`}
           type="button"
           disabled={!itemsLength || locked}
           onClick={onSelectFile}
