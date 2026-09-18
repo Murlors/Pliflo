@@ -45,11 +45,15 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Pliflo ${{ github.ref_name }}"
           releaseBody: |
-            Pliflo 1.1 makes the local multi-format batch-printing workflow substantially more usable for large and mixed document batches.
+            Pliflo 1.1.1 改善打印设置核对、异常提示和失败重试。
 
-            Supported sources include PDF, DOCX, PPTX, XLSX, Markdown, PNG, JPG/JPEG, WebP, GIF and BMP. Non-PDF documents are prepared incrementally into printable PDFs, with bounded preparation, cancellation and lossless PNG page transfer over Tauri binary IPC to reduce frontend memory pressure on large files.
+            - 关闭双面时同时提交驱动参数与标准单面参数。
+            - 明确当前文件与整个批次的设置范围，打印前逐文件核对单双面、纸盒、份数等设置。
+            - 持续展示系统报告的缺纸等异常，区分排队、等待处理、打印中和各类终态。
+            - 支持文件行直接移除、失败项批量重新入队，以及历史详情中的提交设置和系统原因。
+            - 重新入队保留旧历史，不自动打印；移除批次文件不删除原文件。
 
-            See the README for current platform support and printing behavior.
+            本版本提供 macOS 通用安装包。系统未提供具体纸盒信息时，仅显示纸盒未知；系统完成状态不代表独立确认纸张输出。单面输出修正仍需在实际设备上试打确认。
           releaseDraft: false
           prerelease: false
           args: --target universal-apple-darwin
