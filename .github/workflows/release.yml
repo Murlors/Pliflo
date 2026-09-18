@@ -45,9 +45,9 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Pliflo ${{ github.ref_name }}"
           releaseBody: |
-            Pliflo 1.0 expands the macOS batch-printing workflow from PDF-only to local multi-format documents.
+            Pliflo 1.1 makes the local multi-format batch-printing workflow substantially more usable for large and mixed document batches.
 
-            Supported sources include PDF, DOCX, PPTX, XLSX, Markdown, PNG, JPG/JPEG, WebP, GIF and BMP. Non-PDF documents are prepared locally into printable PDFs and reuse the same preview, settings, queue and CUPS printing pipeline.
+            Supported sources include PDF, DOCX, PPTX, XLSX, Markdown, PNG, JPG/JPEG, WebP, GIF and BMP. Non-PDF documents are prepared incrementally into printable PDFs, with bounded preparation, cancellation and lossless PNG page transfer over Tauri binary IPC to reduce frontend memory pressure on large files.
 
             See the README for current platform support and printing behavior.
           releaseDraft: false
