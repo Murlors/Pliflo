@@ -1,6 +1,6 @@
-import { FilePlus2, FileText, GripVertical, MoreHorizontal, Plus, Search } from "lucide-react";
+import { FilePlus2, FileText, Plus, Search, RotateCcw, Trash2 } from "lucide-react";
 import type { JobState, QueueItem } from "../app/types";
-import { formatBytes } from "../lib/print";
+import { canRetryJob, formatBytes, isActiveJob } from "../lib/print";
 import { StatusIcon } from "./StatusIcon";
 
 type QueuePanelProps = {
@@ -27,7 +27,19 @@ type QueuePanelProps = {
     preparing: string;
     inProgress: string;
     done: string;
+    retry: string;
+    retryFailed: string;
+    remove: string;
+    removeHint: string;
+    clearFinished: string;
+    noSearchResults: string;
+    statusUnavailable: string;
   };
+  locked: boolean;
+  onRemove: (id: string) => void;
+  onRetry: (item: QueueItem) => void;
+  onRetryFailed: () => void;
+  onClearFinished: () => void;
   onChooseFiles: () => void;
   onSearchChange: (value: string) => void;
   onSelect: (id: string) => void;
@@ -47,6 +59,11 @@ export function QueuePanel({
   onChooseFiles,
   onSearchChange,
   onSelect,
+  locked,
+  onRemove,
+  onRetry,
+  onRetryFailed,
+  onClearFinished,
 }: QueuePanelProps) {
   return (
     <aside className="queue-panel flex min-h-0 min-w-0 flex-col">
@@ -82,6 +99,32 @@ export function QueuePanel({
         </span>
       </div>
 
+      {(items.some((item) => item.state === "failed") || completedCount > 0) && (
+        <div className="flex flex-wrap gap-2 px-3 py-1.5">
+          {items.some((item) => item.state === "failed") && (
+            <button
+              className="secondary-action px-2 py-1.5 text-xs"
+              type="button"
+              disabled={locked}
+              onClick={onRetryFailed}
+            >
+              {labels.retryFailed}
+            </button>
+          )}
+          {completedCount > 0 && (
+            <button
+              className="secondary-action px-2 py-1.5 text-xs"
+              type="button"
+              disabled={locked}
+              onClick={onClearFinished}
+              title={labels.removeHint}
+            >
+              {labels.clearFinished}
+            </button>
+          )}
+        </div>
+      )}
+
       <div
         className={`file-list min-h-0 flex-1 overflow-auto px-2 pb-3.5 pt-1.25 ${isDragging ? "drag-active" : ""}`}
       >
@@ -98,39 +141,71 @@ export function QueuePanel({
             <span className="text-xs">{labels.chooseMac}</span>
           </button>
         ) : (
-          visibleItems.map((item, index) => (
-            <button
-              className={`file-row my-0.5 grid min-h-16 w-full grid-cols-[15px_22px_29px_minmax(0,1fr)_auto_18px] items-center gap-1.5 py-1.75 pl-0.5 pr-2 text-left ${selectedId === item.id ? "selected" : ""}`}
+          visibleItems.map((item) => (
+            <div
+              className={`file-row my-0.5 flex min-h-16 w-full items-center gap-1 py-1.75 px-2 text-left ${selectedId === item.id ? "selected" : ""}`}
               key={item.id}
-              type="button"
-              onClick={() => onSelect(item.id)}
             >
-              <GripVertical className="drag-handle" size={15} />
-              <div className="file-index text-xs tabular-nums">
-                {String(index + 1).padStart(2, "0")}
-              </div>
-              <div className="pdf-icon grid h-8.5 w-6.75 place-items-center">
-                <FileText size={17} />
-              </div>
-              <div className="file-copy flex min-w-0 flex-col gap-1">
-                <strong className="truncate text-sm font-620">{item.name}</strong>
-                <span
-                  className={`text-xs ${item.state === "failed" && item.error ? "file-error" : ""}`}
-                >
-                  {item.state === "failed" && item.error
-                    ? item.error
-                    : `${item.pages ? labels.pages(item.pages) : labels.pagesUnknown} · ${formatBytes(item.sizeBytes)}`}
-                </span>
-              </div>
-              <div
-                className={`job-state flex items-center gap-1 whitespace-nowrap px-1.5 py-1 text-xs state-${item.state}`}
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                aria-pressed={selectedId === item.id}
+                onClick={() => onSelect(item.id)}
               >
-                <StatusIcon state={item.state} />
-                <span>{item.preparing ? labels.preparing : stateLabel[item.state]}</span>
+                <div className="pdf-icon grid h-8.5 w-6.75 place-items-center">
+                  <FileText size={17} />
+                </div>
+                <div className="file-copy flex min-w-0 flex-1 flex-col gap-1">
+                  <strong className="truncate text-sm font-620">{item.name}</strong>
+                  <span
+                    className={`text-xs ${item.state === "failed" && item.error ? "file-error" : ""}`}
+                  >
+                    {item.state === "failed" && item.error
+                      ? item.error
+                      : `${item.pages ? labels.pages(item.pages) : labels.pagesUnknown} · ${formatBytes(item.sizeBytes)}`}
+                  </span>
+                  <div
+                    className={`job-state flex self-start items-center gap-1 text-xs state-${item.state}`}
+                  >
+                    <StatusIcon state={item.state} />
+                    <span>{item.preparing ? labels.preparing : stateLabel[item.state]}</span>
+                  </div>
+                  {item.statusUnavailable && (
+                    <span className="file-error text-xs">{labels.statusUnavailable}</span>
+                  )}
+                </div>
+              </button>
+              <div className="flex shrink-0 flex-col gap-1">
+                {canRetryJob(item) && (
+                  <button
+                    type="button"
+                    className="icon-button"
+                    disabled={locked}
+                    aria-label={`${labels.retry}: ${item.name}`}
+                    title={labels.retry}
+                    onClick={() => onRetry(item)}
+                  >
+                    <RotateCcw size={14} />
+                  </button>
+                )}
+                {!isActiveJob(item) && (
+                  <button
+                    type="button"
+                    className="icon-button danger-hover"
+                    disabled={locked}
+                    aria-label={`${labels.remove}: ${item.name}`}
+                    title={labels.removeHint}
+                    onClick={() => onRemove(item.id)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
-              <MoreHorizontal size={16} />
-            </button>
+            </div>
           ))
+        )}
+        {!!items.length && !visibleItems.length && (
+          <p className="px-3 py-6 text-sm">{labels.noSearchResults}</p>
         )}
       </div>
 

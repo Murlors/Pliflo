@@ -1,5 +1,7 @@
 use lopdf::{dictionary, Dictionary, Document, Object, Stream};
 use serde::{Deserialize, Serialize};
+mod print_status;
+use print_status::{get_print_job_status, get_printer_status};
 use std::{
     fs,
     io::Cursor,
@@ -423,11 +425,6 @@ fn print_job_destination(job_id: &str) -> Option<&str> {
     .then_some(destination)
 }
 
-fn lpstat_contains_job(raw: &str, job_id: &str) -> bool {
-    raw.lines()
-        .any(|line| line.split_whitespace().next() == Some(job_id))
-}
-
 fn parse_default_destination<'a>(raw: &str, destinations: &'a [&str]) -> Option<&'a str> {
     let output = raw.trim();
     let separator = output
@@ -483,6 +480,25 @@ fn find_option_value<'a>(options: &'a [PrinterOption], candidates: &[&str]) -> O
 
 fn printer_assignment(key: &str, value: &str) -> String {
     format!("{key}={value}")
+}
+
+/// 驱动与标准 IPP 参数保持一致，显式单面不能依赖打印机默认值。
+fn duplex_assignments(groups: &[(String, Vec<PrinterOption>)], mode: &str) -> Result<Vec<String>, String> {
+    let (candidates, standard) = match mode {
+        "long" => (&["DuplexNoTumble", "two-sided-long-edge"][..], "sides=two-sided-long-edge"),
+        "short" => (&["DuplexTumble", "two-sided-short-edge"][..], "sides=two-sided-short-edge"),
+        "none" => (&["None", "one-sided"][..], "sides=one-sided"),
+        _ => return Err("Invalid duplex mode".into()),
+    };
+    let mut assignments = Vec::new();
+    if let Some((key, options)) = find_printer_option(groups, &["Duplex", "sides", "print-sides"]) {
+        let value = find_option_value(options, candidates)
+            .ok_or("The selected duplex mode is not supported by this printer.")?;
+        let driver = printer_assignment(key, value);
+        if driver != standard { assignments.push(driver); }
+    }
+    assignments.push(standard.into());
+    Ok(assignments)
 }
 
 fn normalize_page_range(raw: &str) -> Result<Option<String>, String> {
@@ -710,24 +726,7 @@ fn submit_print_job(
         &["-p", printer.as_str(), "-l"],
     )?);
     let copies = settings.copies.clamp(1, 99).to_string();
-    let duplex = if let Some((key, options)) =
-        find_printer_option(&driver_options, &["Duplex", "sides", "print-sides"])
-    {
-        let candidates = match settings.duplex.as_str() {
-            "long" => &["DuplexNoTumble", "two-sided-long-edge"][..],
-            "short" => &["DuplexTumble", "two-sided-short-edge"][..],
-            _ => &["None", "one-sided"][..],
-        };
-        let value = find_option_value(options, candidates)
-            .ok_or_else(|| format!("The selected duplex mode is not supported by {printer}."))?;
-        printer_assignment(key, value)
-    } else {
-        match settings.duplex.as_str() {
-            "long" => "sides=two-sided-long-edge".to_string(),
-            "short" => "sides=two-sided-short-edge".to_string(),
-            _ => "sides=one-sided".to_string(),
-        }
-    };
+    let duplex = duplex_assignments(&driver_options, &settings.duplex)?;
     let color = match settings.color.as_str() {
         "grayscale" | "color" => {
             if let Some((key, options)) = find_printer_option(
@@ -823,12 +822,11 @@ fn submit_print_job(
         "-n",
         copies.as_str(),
         "-o",
-        duplex.as_str(),
-        "-o",
         scale,
         "-o",
         media.as_str(),
     ];
+    for value in &duplex { args.extend(["-o", value.as_str()]); }
     if let Some(value) = color.as_deref() {
         args.extend(["-o", value]);
     }
@@ -871,28 +869,6 @@ fn submit_print_job(
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-fn get_print_job_state(job_id: String) -> Result<String, String> {
-    let destination = print_job_destination(&job_id)
-        .ok_or_else(|| format!("Unrecognized print job id: {job_id}"))?;
-    let pending = command_output("lpstat", &["-W", "not-completed", "-o", destination])?;
-    if lpstat_contains_job(&pending, &job_id) {
-        return Ok("pending".to_string());
-    }
-    let completed = command_output("lpstat", &["-W", "completed", "-o", destination])?;
-    if lpstat_contains_job(&completed, &job_id) {
-        return Ok("completed".to_string());
-    }
-    Ok("unknown".to_string())
-}
-
-#[cfg(not(target_os = "macos"))]
-#[tauri::command]
-fn get_print_job_state(_job_id: String) -> Result<String, String> {
-    Ok("unknown".to_string())
-}
-
-#[cfg(target_os = "macos")]
-#[tauri::command]
 fn cancel_print_job(job_id: String) -> Result<(), String> {
     print_job_destination(&job_id).ok_or_else(|| format!("Unrecognized print job id: {job_id}"))?;
     command_output("cancel", &[job_id.as_str()]).map(|_| ())
@@ -907,7 +883,7 @@ fn cancel_print_job(_job_id: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        lpstat_contains_job, normalize_page_range, parse_default_destination, parse_print_job_id,
+        normalize_page_range, parse_default_destination, parse_print_job_id,
         parse_printer_option, print_job_destination, supports_color, supports_duplex,
         PrinterOption,
     };
@@ -918,6 +894,19 @@ mod tests {
             label: value.to_string(),
             is_default: false,
         }
+    }
+
+    #[test]
+    fn overrides_duplex_default_for_airprint_without_submitting() {
+        let groups = vec![parse_printer_option(
+            "Duplex/2-Sided Printing: None *DuplexNoTumble DuplexTumble"
+        ).unwrap()];
+        assert_eq!(super::duplex_assignments(&groups, "none").unwrap(),
+            vec!["Duplex=None", "sides=one-sided"]);
+        assert_eq!(super::duplex_assignments(&groups, "short").unwrap(),
+            vec!["Duplex=DuplexTumble", "sides=two-sided-short-edge"]);
+        let unsupported = vec![("Duplex".into(), vec![option("DuplexNoTumble")])];
+        assert!(super::duplex_assignments(&unsupported, "none").is_err());
     }
 
     #[test]
@@ -944,17 +933,9 @@ mod tests {
     }
 
     #[test]
-    fn derives_destination_and_matches_exact_lpstat_job() {
+    fn derives_destination_from_system_job_id() {
         let job_id = "Office-Printer_A-42";
         assert_eq!(print_job_destination(job_id), Some("Office-Printer_A"));
-        assert!(lpstat_contains_job(
-            "Office-Printer_A-41 user 1024 Thu\nOffice-Printer_A-42 user 2048 Thu",
-            job_id
-        ));
-        assert!(!lpstat_contains_job(
-            "Office-Printer_A-420 user 2048 Thu",
-            job_id
-        ));
     }
 
     #[test]
@@ -1035,7 +1016,8 @@ pub fn run() {
             list_printers,
             get_printer_capabilities,
             submit_print_job,
-            get_print_job_state,
+            get_print_job_status,
+            get_printer_status,
             cancel_print_job
         ])
         .run(tauri::generate_context!())

@@ -13,6 +13,8 @@ import type {
   PrinterCapabilities,
   PrinterInfo,
   PrintSettings,
+  PrintStatus,
+  PrinterStatus,
   QueueItem,
   SubmitResult,
   Theme,
@@ -24,7 +26,14 @@ import { HistoryDrawer } from "./components/HistoryDrawer";
 import { PdfPreviewPanel } from "./components/PdfPreviewPanel";
 import { PrintSettingsPanel } from "./components/PrintSettingsPanel";
 import { QueuePanel } from "./components/QueuePanel";
-import { createQueueItem, estimatePrintUsage } from "./lib/print";
+import { PrintReviewDialog } from "./components/PrintReviewDialog";
+import {
+  canRetryJob,
+  createQueueItem,
+  estimatePrintUsage,
+  isActiveJob,
+  retryQueueItem,
+} from "./lib/print";
 import {
   cleanupGeneratedDocument,
   documentFormat,
@@ -62,6 +71,13 @@ function App() {
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [selectedPrinter, setSelectedPrinter] = useState("");
   const [printerCapabilities, setPrinterCapabilities] = useState<PrinterCapabilities | null>(null);
+  const [printerStatus, setPrinterStatus] = useState<PrinterStatus | null>(null);
+  const printerStatusNameRef = useRef("");
+  const [printerStatusUnavailable, setPrinterStatusUnavailable] = useState(false);
+  const [printerRefresh, setPrinterRefresh] = useState(0);
+  const [review, setReview] = useState<{ printer: string; items: QueueItem[] } | null>(null);
+  const retryingIdsRef = useRef(new Set<string>());
+  const statusRequestsRef = useRef(new Set<string>());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [batchSettings, setBatchSettings] = useState<PrintSettings>({ ...DEFAULT_SETTINGS });
   const [queuePaused, setQueuePaused] = useState(false);
@@ -78,8 +94,9 @@ function App() {
   const stateLabel: Record<JobState, string> = {
     queued: copy.ready,
     submitting: copy.submitting,
-    submitted: copy.submitted,
+    submitted: copy.waitingInSystem,
     printing: copy.printing,
+    blocked: copy.blocked,
     completed: copy.completed,
     cancelled: copy.cancelled,
     failed: copy.attention,
@@ -88,9 +105,7 @@ function App() {
   const selected = items.find((item) => item.id === selectedId) ?? null;
   const queuedItems = items.filter((item) => item.state === "queued");
   const pending = queuedItems.filter((item) => !item.preparing);
-  const active = items.filter((item) =>
-    ["submitting", "submitted", "printing"].includes(item.state),
-  );
+  const active = items.filter(isActiveJob);
   const completed = items.filter((item) => item.state === "completed");
   const history = useMemo(
     () => [...historyItems].sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0)),
@@ -217,7 +232,7 @@ function App() {
   useEffect(() => {
     if (preferences.restoreBatch) {
       const batch = items.filter((item) =>
-        ["queued", "submitting", "submitted", "printing"].includes(item.state),
+        ["queued", "submitting", "submitted", "printing", "blocked", "failed"].includes(item.state),
       );
       localStorage.setItem("pliflo-batch", JSON.stringify(batch));
     } else {
@@ -238,6 +253,7 @@ function App() {
   }, [history, items, preferences.historyRetention, preferences.restoreBatch]);
 
   const refreshPrinters = useCallback(async () => {
+    setPrinterRefresh((value) => value + 1);
     try {
       const result = await invoke<PrinterInfo[]>("list_printers");
       setPrinters(result);
@@ -274,6 +290,7 @@ function App() {
                 format,
                 generated: format !== "pdf",
               }),
+              settings: { ...batchSettings },
               preparing: true,
             },
           ];
@@ -287,7 +304,7 @@ function App() {
         setNotice(copy.addFilesError(error));
       }
     },
-    [copy],
+    [copy, batchSettings],
   );
 
   // Printer discovery is an external OS synchronization and intentionally updates UI state.
@@ -302,18 +319,22 @@ function App() {
     });
 
     for (const { itemId, jobId } of recoverable) {
-      void invoke<"pending" | "completed" | "unknown">("get_print_job_state", { jobId })
-        .then((state) => {
-          if (state === "unknown") return;
+      void invoke<PrintStatus>("get_print_job_status", { jobId })
+        .then((status) => {
+          if (status.state === "unknown") return;
           setHistoryItems((current) =>
             current.map((item) =>
               item.id === itemId
                 ? {
                     ...item,
                     systemJobId: jobId,
-                    state: state === "completed" ? "completed" : "printing",
+                    state: status.state === "unknown" ? item.state : status.state,
+                    systemReasons: status.reasons,
+                    systemMessage: status.message,
                     error: undefined,
-                    finishedAt: state === "completed" ? (item.finishedAt ?? Date.now()) : undefined,
+                    finishedAt: ["completed", "cancelled", "failed"].includes(status.state)
+                      ? (item.finishedAt ?? Date.now())
+                      : undefined,
                   }
                 : item,
             ),
@@ -339,7 +360,37 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedPrinter]);
+  }, [selectedPrinter, printerRefresh]);
+
+  useEffect(() => {
+    if (printerStatusNameRef.current !== selectedPrinter) {
+      printerStatusNameRef.current = selectedPrinter;
+      setPrinterStatus(null);
+      setPrinterStatusUnavailable(false);
+    }
+    if (!selectedPrinter) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const status = await invoke<PrinterStatus>("get_printer_status", {
+          printer: selectedPrinter,
+        });
+        if (!cancelled) {
+          setPrinterStatus(status);
+          setPrinterStatusUnavailable(false);
+        }
+      } catch {
+        if (!cancelled) setPrinterStatusUnavailable(true);
+      }
+      if (!cancelled) timer = window.setTimeout(() => void poll(), 5000);
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [selectedPrinter, printerRefresh]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -361,30 +412,42 @@ function App() {
   useEffect(() => {
     if (!active.length) return;
     const timer = window.setInterval(() => {
-      for (const item of items.filter(
-        (entry) => entry.systemJobId && ["submitted", "printing"].includes(entry.state),
-      )) {
-        void invoke<"pending" | "completed" | "unknown">("get_print_job_state", {
+      for (const item of items.filter((entry) => entry.systemJobId && isActiveJob(entry))) {
+        if (statusRequestsRef.current.has(item.systemJobId!)) continue;
+        statusRequestsRef.current.add(item.systemJobId!);
+        void invoke<PrintStatus>("get_print_job_status", {
           jobId: item.systemJobId,
         })
-          .then((state) => {
+          .then((status) => {
             setItems((current) =>
               current.map((candidate) => {
                 if (candidate.id !== item.id) return candidate;
-                if (
-                  candidate.systemJobId !== item.systemJobId ||
-                  !["submitted", "printing"].includes(candidate.state)
-                ) {
+                if (candidate.systemJobId !== item.systemJobId || !isActiveJob(candidate)) {
                   return candidate;
                 }
-                if (state === "completed")
-                  return { ...candidate, state: "completed", finishedAt: Date.now() };
-                if (state === "pending") return { ...candidate, state: "printing" };
-                return candidate;
+                return {
+                  ...candidate,
+                  state: status.state === "unknown" ? candidate.state : status.state,
+                  systemReasons: status.reasons,
+                  systemMessage: status.message,
+                  statusUnavailable: status.state === "unknown",
+                  finishedAt: ["completed", "cancelled", "failed"].includes(status.state)
+                    ? Date.now()
+                    : undefined,
+                };
               }),
             );
           })
-          .catch(() => undefined);
+          .catch(() =>
+            setItems((current) =>
+              current.map((candidate) =>
+                candidate.id === item.id && isActiveJob(candidate)
+                  ? { ...candidate, statusUnavailable: true }
+                  : candidate,
+              ),
+            ),
+          )
+          .finally(() => statusRequestsRef.current.delete(item.systemJobId!));
       }
     }, 2500);
     return () => window.clearInterval(timer);
@@ -400,25 +463,37 @@ function App() {
   }
 
   function updateItemSettings(id: string, patch: Partial<PrintSettings>) {
+    if (queueRunningRef.current) return;
     setItems((current) =>
       current.map((item) =>
-        item.id === id ? { ...item, settings: { ...item.settings, ...patch } } : item,
+        item.id === id && !isActiveJob(item) && item.state !== "completed"
+          ? { ...item, settings: { ...item.settings, ...patch } }
+          : item,
       ),
     );
   }
 
   function applyBatchSettings(patch: Partial<PrintSettings>) {
+    if (queueRunningRef.current) return;
     setBatchSettings((current) => ({ ...current, ...patch }));
     setItems((current) =>
       current.map((item) =>
-        item.state === "queued" ? { ...item, settings: { ...item.settings, ...patch } } : item,
+        item.state === "queued" || canRetryJob(item)
+          ? { ...item, settings: { ...item.settings, ...patch } }
+          : item,
       ),
     );
   }
 
   function updateRenderOptions(id: string, patch: Partial<DocumentRenderOptions>) {
     const item = items.find((candidate) => candidate.id === id);
-    if (!item || !["xlsx", "image"].includes(item.format)) return;
+    if (
+      queueRunningRef.current ||
+      !item ||
+      item.state !== "queued" ||
+      !["xlsx", "image"].includes(item.format)
+    )
+      return;
     const baseOptions = pendingRenderOptionsRef.current.get(id) ?? item.renderOptions;
     const nextOptions = { ...baseOptions, ...patch };
     preparationVersionsRef.current.set(id, (preparationVersionsRef.current.get(id) ?? 0) + 1);
@@ -447,7 +522,17 @@ function App() {
     setItems((current) =>
       current.map((candidate) =>
         candidate.id === item.id
-          ? { ...candidate, state: "submitting", error: undefined, finishedAt: undefined }
+          ? {
+              ...candidate,
+              state: "submitting",
+              error: undefined,
+              finishedAt: undefined,
+              submittedPrinter: selectedPrinter,
+              submittedSettings: { ...item.settings },
+              submittedAt: Date.now(),
+              systemReasons: undefined,
+              systemMessage: undefined,
+            }
           : candidate,
       ),
     );
@@ -455,17 +540,7 @@ function App() {
       const result = await invoke<SubmitResult>("submit_print_job", {
         path: item.printPath,
         printer: selectedPrinter,
-        settings: {
-          ...item.settings,
-          duplex:
-            printerCapabilities && !printerCapabilities.supportsDuplex
-              ? "none"
-              : item.settings.duplex,
-          color:
-            printerCapabilities && !printerCapabilities.supportsColor
-              ? "auto"
-              : item.settings.color,
-        },
+        settings: item.settings,
       });
       setItems((current) =>
         current.map((candidate) =>
@@ -489,16 +564,55 @@ function App() {
     }
   }
 
+  function openPrintReview() {
+    if (queueRunningRef.current || !printerCapabilities || !selectedPrinter) return;
+    setReview({
+      printer: selectedPrinter,
+      items: pending.map((item) => ({
+        ...item,
+        settings: {
+          ...item.settings,
+          duplex: printerCapabilities.supportsDuplex ? item.settings.duplex : "none",
+          color: printerCapabilities.supportsColor ? item.settings.color : "auto",
+        },
+      })),
+    });
+  }
+
   async function startQueue() {
+    if (!review || !printerCapabilities) return;
     if (queueRunningRef.current) return;
+    const current = pending.map((item) => ({
+      ...item,
+      settings: {
+        ...item.settings,
+        duplex: printerCapabilities.supportsDuplex ? item.settings.duplex : "none",
+        color: printerCapabilities.supportsColor ? item.settings.color : "auto",
+      },
+    }));
+    if (
+      review.printer !== selectedPrinter ||
+      JSON.stringify(current) !== JSON.stringify(review.items)
+    ) {
+      setReview(null);
+      setNotice(copy.batchReviewChanged);
+      return;
+    }
+    const approved = review.items;
+    setReview(null);
     queueRunningRef.current = true;
     setQueueRunning(true);
     queuePausedRef.current = false;
     if (queuePaused) setQueuePaused(false);
     try {
-      for (const item of pending) {
+      for (const item of approved) {
+        if (queuePausedRef.current) break;
         const submitted = await submitOne(item);
-        if (!submitted || queuePausedRef.current) break;
+        if (!submitted) {
+          queuePausedRef.current = true;
+          setQueuePaused(true);
+          break;
+        }
       }
     } finally {
       queueRunningRef.current = false;
@@ -507,17 +621,82 @@ function App() {
   }
 
   async function cancelJob(item: QueueItem) {
+    if (!item.systemJobId || !isActiveJob(item)) return;
     try {
-      if (item.systemJobId) await invoke("cancel_print_job", { jobId: item.systemJobId });
-      setItems((current) =>
+      await invoke("cancel_print_job", { jobId: item.systemJobId });
+      // 请求成功不等于已取消；由状态轮询确认终态，避免覆盖恰好完成的作业。
+      setNotice(copy.cancelRequested);
+    } catch (error) {
+      setNotice(copy.cancelError(error));
+    }
+  }
+
+  function removeItem(id: string) {
+    const item = items.find((candidate) => candidate.id === id);
+    if (!item || queueRunningRef.current || isActiveJob(item)) return;
+    preparationVersionsRef.current.set(id, (preparationVersionsRef.current.get(id) ?? 0) + 1);
+    if (preparingIdRef.current === id) preparationControllerRef.current?.abort();
+    pendingRenderOptionsRef.current.delete(id);
+    if (item.retryOf) retryingIdsRef.current.delete(item.retryOf);
+    void cleanupGeneratedDocument(item);
+    setItems((current) => current.filter((candidate) => candidate.id !== id));
+    setSelectedId((current) => (current === id ? null : current));
+  }
+
+  function retryItems(candidates: QueueItem[]) {
+    if (queueRunningRef.current) return;
+    const retryable = candidates.filter(
+      (item) => canRetryJob(item) && !retryingIdsRef.current.has(item.id),
+    );
+    if (!retryable.length) return;
+    const fresh = retryable.map((item) => {
+      retryingIdsRef.current.add(item.id);
+      const retry = retryQueueItem(item);
+      // 批次里已修改的设置优先，历史记录本身保持当次快照。
+      if (items.some((current) => current.id === item.id)) retry.settings = { ...item.settings };
+      void cleanupGeneratedDocument(item);
+      return retry;
+    });
+    setHistoryItems((current) => {
+      const byId = new Map(current.map((item) => [item.id, item]));
+      for (const item of retryable) if (!byId.has(item.id)) byId.set(item.id, item);
+      return [...byId.values()];
+    });
+    setItems((current) => [
+      ...current.filter((item) => !retryable.some((old) => old.id === item.id)),
+      ...fresh,
+    ]);
+    setSelectedId(fresh[0].id);
+    setHistoryOpen(false);
+    setNotice(copy.retryHint);
+  }
+
+  async function inspectHistory(item: QueueItem) {
+    if (!item.systemJobId || item.systemReasons || statusRequestsRef.current.has(item.systemJobId))
+      return;
+    statusRequestsRef.current.add(item.systemJobId);
+    try {
+      const status = await invoke<PrintStatus>("get_print_job_status", { jobId: item.systemJobId });
+      setHistoryItems((current) =>
         current.map((candidate) =>
           candidate.id === item.id
-            ? { ...candidate, state: "cancelled", finishedAt: Date.now() }
+            ? {
+                ...candidate,
+                systemReasons: status.reasons,
+                systemMessage: status.message,
+                statusUnavailable: false,
+              }
             : candidate,
         ),
       );
-    } catch (error) {
-      setNotice(copy.cancelError(error));
+    } catch {
+      setHistoryItems((current) =>
+        current.map((candidate) =>
+          candidate.id === item.id ? { ...candidate, statusUnavailable: true } : candidate,
+        ),
+      );
+    } finally {
+      statusRequestsRef.current.delete(item.systemJobId);
     }
   }
 
@@ -579,24 +758,22 @@ function App() {
           onChooseFiles={() => void chooseFiles()}
           onSearchChange={setSearch}
           onSelect={setSelectedId}
+          locked={queueRunning}
+          onRemove={removeItem}
+          onRetry={(item) => retryItems([item])}
+          onRetryFailed={() => retryItems(items.filter((item) => item.state === "failed"))}
+          onClearFinished={() =>
+            items
+              .filter((item) => item.state === "completed")
+              .forEach((item) => removeItem(item.id))
+          }
         />
 
         <PdfPreviewPanel
           selected={selected}
           queueRunning={queueRunning}
           labels={copy}
-          onRemove={(id) => {
-            const item = items.find((candidate) => candidate.id === id);
-            preparationVersionsRef.current.set(
-              id,
-              (preparationVersionsRef.current.get(id) ?? 0) + 1,
-            );
-            if (preparingIdRef.current === id) preparationControllerRef.current?.abort();
-            pendingRenderOptionsRef.current.delete(id);
-            if (item) void cleanupGeneratedDocument(item);
-            setItems((current) => current.filter((candidate) => candidate.id !== id));
-            setSelectedId(null);
-          }}
+          onRemove={removeItem}
         />
 
         <PrintSettingsPanel
@@ -604,6 +781,8 @@ function App() {
           printers={printers}
           selectedPrinter={selectedPrinter}
           printerCapabilities={printerCapabilities}
+          printerStatus={printerStatus}
+          printerStatusUnavailable={printerStatusUnavailable}
           selected={selected}
           itemsLength={items.length}
           settings={settings}
@@ -613,8 +792,7 @@ function App() {
           queueRunning={queueRunning}
           queuePaused={queuePaused}
           onReset={() => {
-            setBatchSettings({ ...DEFAULT_SETTINGS });
-            if (selected) updateItemSettings(selected.id, DEFAULT_SETTINGS);
+            changeSetting(DEFAULT_SETTINGS);
           }}
           onPrinterChange={(printer) => {
             setPrinterCapabilities(null);
@@ -630,10 +808,10 @@ function App() {
           onChangeRenderOptions={(patch) => {
             if (selected) updateRenderOptions(selected.id, patch);
           }}
-          onStartQueue={() => void startQueue()}
+          onStartQueue={openPrintReview}
           onToggleQueuePause={() => {
             if (queuePaused) {
-              void startQueue();
+              openPrintReview();
               return;
             }
             queuePausedRef.current = true;
@@ -648,7 +826,22 @@ function App() {
           labels={copy}
           items={history}
           stateLabel={stateLabel}
+          locale={locale}
+          onRetry={(item) => retryItems([item])}
+          canRetry={(item) => !queueRunning && !retryingIdsRef.current.has(item.id)}
+          onInspect={(item) => void inspectHistory(item)}
           onClose={() => setHistoryOpen(false)}
+        />
+      )}
+
+      {review && (
+        <PrintReviewDialog
+          items={review.items}
+          printer={review.printer}
+          capabilities={printerCapabilities}
+          labels={copy}
+          onClose={() => setReview(null)}
+          onConfirm={() => void startQueue()}
         />
       )}
 

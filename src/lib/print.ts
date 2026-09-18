@@ -1,6 +1,32 @@
 import { DEFAULT_RENDER_OPTIONS, DEFAULT_SETTINGS } from "../app/constants";
 import type { DocumentInfo, PrinterCapabilities, PrinterOption, QueueItem } from "../app/types";
 
+export const isActiveJob = (item: QueueItem) =>
+  ["submitting", "submitted", "printing", "blocked"].includes(item.state);
+
+export const canRetryJob = (item: QueueItem) => ["failed", "cancelled"].includes(item.state);
+
+/** 重试创建独立尝试；保留旧历史，重新从源文件准备临时产物。 */
+export function retryQueueItem(item: QueueItem): QueueItem {
+  return {
+    ...createQueueItem(item),
+    settings: { ...(item.submittedSettings ?? item.settings) },
+    renderOptions: { ...item.renderOptions },
+    printPath: "",
+    preparing: true,
+    systemJobId: undefined,
+    error: undefined,
+    finishedAt: undefined,
+    submittedAt: undefined,
+    submittedPrinter: undefined,
+    submittedSettings: undefined,
+    systemReasons: undefined,
+    systemMessage: undefined,
+    statusUnavailable: undefined,
+    retryOf: item.id,
+  };
+}
+
 export function formatBytes(bytes: number) {
   return bytes < 1024 * 1024
     ? `${Math.max(1, Math.round(bytes / 1024))} KB`

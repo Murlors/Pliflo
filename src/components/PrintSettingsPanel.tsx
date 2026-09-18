@@ -8,15 +8,19 @@ import {
   RefreshCw,
   RotateCcw,
   SlidersHorizontal,
+  CircleAlert,
 } from "lucide-react";
+import type { COPY } from "../app/i18n";
 import type {
   DocumentRenderOptions,
   PrinterCapabilities,
   PrinterInfo,
   PrintSettings,
   QueueItem,
+  PrinterStatus,
 } from "../app/types";
 import { supportsPrinterChoice } from "../lib/print";
+import { describeReasons } from "../lib/printer-status";
 import { StatusIcon } from "./StatusIcon";
 
 type Labels = {
@@ -92,10 +96,12 @@ type PrintEstimate = {
 };
 
 type PrintSettingsPanelProps = {
-  labels: Labels;
+  labels: Labels & (typeof COPY)[keyof typeof COPY];
   printers: PrinterInfo[];
   selectedPrinter: string;
   printerCapabilities: PrinterCapabilities | null;
+  printerStatus: PrinterStatus | null;
+  printerStatusUnavailable: boolean;
   selected: QueueItem | null;
   itemsLength: number;
   settings: PrintSettings;
@@ -121,6 +127,8 @@ export function PrintSettingsPanel({
   printers,
   selectedPrinter,
   printerCapabilities,
+  printerStatus,
+  printerStatusUnavailable,
   selected,
   itemsLength,
   settings,
@@ -141,6 +149,11 @@ export function PrintSettingsPanel({
   onCancelJob,
 }: PrintSettingsPanelProps) {
   const locked = queueRunning;
+  const settingsLocked =
+    locked || (!!selected && !["queued", "failed", "cancelled"].includes(selected.state));
+  const alerts = describeReasons(printerStatus?.reasons ?? [], labels);
+  if (printerStatus?.state === "stopped" && !alerts.includes(labels.printerStopped))
+    alerts.push(labels.printerStopped);
   const detected =
     printers.find((printer) => printer.name === selectedPrinter)?.state === "detected";
 
@@ -158,7 +171,7 @@ export function PrintSettingsPanel({
         <button
           className="icon-button"
           type="button"
-          disabled={locked}
+          disabled={settingsLocked}
           onClick={onReset}
           title={labels.reset}
           aria-label={labels.resetSettings}
@@ -201,6 +214,25 @@ export function PrintSettingsPanel({
         </div>
       </div>
 
+      {(alerts.length > 0 || printerStatusUnavailable || printerStatus?.message) && (
+        <div
+          className="printer-alert mx-3.25 mt-2 flex max-h-28 shrink-0 gap-2 overflow-auto p-2.5 text-xs"
+          role="status"
+        >
+          <CircleAlert size={15} className="shrink-0" />
+          <div className="min-w-0 break-words">
+            <strong>{labels.printerAlerts}</strong>
+            {alerts.map((alert) => (
+              <p className="m-0 mt-1" key={alert}>
+                {alert}
+              </p>
+            ))}
+            {printerStatus?.message && <p className="m-0 mt-1">{printerStatus.message}</p>}
+            {printerStatusUnavailable && <p className="m-0 mt-1">{labels.statusUnavailable}</p>}
+          </div>
+        </div>
+      )}
+
       <div className="scope-switch mx-3.25 mt-2.5 flex p-0.75">
         <button
           className={`flex h-7.25 flex-1 items-center justify-center gap-1.25 text-xs font-620 ${!selected ? "active" : ""}`}
@@ -219,10 +251,23 @@ export function PrintSettingsPanel({
           <FileText size={14} /> {labels.file}
         </button>
       </div>
+      <p className="scope-hint mx-3.75 my-2 text-xs leading-relaxed">
+        {settingsLocked && !locked
+          ? labels.settingsLocked
+          : selected
+            ? labels.fileScope
+            : labels.batchScope}
+        {selected && (
+          <strong className="block truncate" title={selected.name}>
+            {selected.name}
+          </strong>
+        )}
+        {!selected && <span className="block mt-1">{labels.batchDefaultsHint}</span>}
+      </p>
 
       <fieldset
         className="settings-scroll settings-fieldset m-0 min-h-0 flex-1 overflow-auto border-0 p-0"
-        disabled={locked}
+        disabled={settingsLocked}
       >
         <div className="setting-section px-3.75 py-2.75 max-[1240px]:px-3">
           <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
@@ -595,7 +640,7 @@ export function PrintSettingsPanel({
             disabled={!pendingCount || !selectedPrinter || !printerCapabilities || queueRunning}
             onClick={onStartQueue}
           >
-            <Printer size={17} /> {labels.printFiles(pendingCount)}
+            <Printer size={17} /> {labels.reviewBatch} · {pendingCount}
           </button>
         </div>
         {activeItems

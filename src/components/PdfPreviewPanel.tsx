@@ -1,6 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { Trash2 } from "lucide-react";
 import type { QueueItem } from "../app/types";
+import { isActiveJob } from "../lib/print";
 
 type PdfPreviewPanelProps = {
   selected: QueueItem | null | undefined;
@@ -25,8 +26,7 @@ export function PdfPreviewPanel({
   labels,
   onRemove,
 }: PdfPreviewPanelProps) {
-  const canRemove =
-    selected && !queueRunning && !["submitting", "submitted", "printing"].includes(selected.state);
+  const canRemove = selected && !queueRunning && !isActiveJob(selected);
 
   return (
     <section className="preview-panel relative flex min-h-0 min-w-0 flex-col">

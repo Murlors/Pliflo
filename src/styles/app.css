@@ -1216,3 +1216,37 @@ summary:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+.print-review {
+  color: var(--console-text);
+  background: var(--console-2);
+  border: 1px solid var(--console-line-strong);
+  border-radius: 10px;
+}
+
+.print-review::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+.review-file {
+  border-top: 1px solid var(--console-line-strong);
+}
+
+.printer-alert {
+  color: var(--warning);
+  border: 1px solid currentColor;
+  border-radius: 6px;
+}
+
+.scope-hint,
+.system-reason-code {
+  color: var(--console-muted);
+}
+
+.state-blocked {
+  color: var(--warning);
+}
+
+.app-shell[data-theme="light"] .printer-alert,
+.app-shell[data-theme="light"] .state-blocked {
+  color: #805615;
+}

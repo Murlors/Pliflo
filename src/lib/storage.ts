@@ -57,7 +57,8 @@ export function loadStoredBatch(preferences: AppPreferences): QueueItem[] {
   return parseStoredItems("pliflo-batch")
     .map(normalizeStoredItem)
     .map((item) => {
-      if (item.state === "submitted" || item.state === "printing") {
+      if (item.state === "failed") return { ...item, preparing: false };
+      if (item.state === "submitted" || item.state === "printing" || item.state === "blocked") {
         return item.systemJobId
           ? { ...item, error: undefined, finishedAt: undefined }
           : {

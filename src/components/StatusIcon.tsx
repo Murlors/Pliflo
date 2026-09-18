@@ -3,7 +3,7 @@ import type { JobState } from "../app/types";
 
 export function StatusIcon({ state }: { state: JobState }) {
   if (state === "completed") return <Check size={14} />;
-  if (state === "failed") return <CircleAlert size={14} />;
+  if (state === "failed" || state === "blocked") return <CircleAlert size={14} />;
   if (state === "submitting" || state === "printing") {
     return <LoaderCircle className="spin" size={14} />;
   }

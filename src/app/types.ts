@@ -34,6 +34,7 @@ export type JobState =
   | "submitting"
   | "submitted"
   | "printing"
+  | "blocked"
   | "completed"
   | "cancelled"
   | "failed";
@@ -62,6 +63,25 @@ export type QueueItem = DocumentInfo & {
   systemJobId?: string;
   error?: string;
   finishedAt?: number;
+  submittedAt?: number;
+  submittedPrinter?: string;
+  submittedSettings?: PrintSettings;
+  systemReasons?: string[];
+  systemMessage?: string;
+  statusUnavailable?: boolean;
+  retryOf?: string;
+};
+
+export type PrintStatus = {
+  state: "submitted" | "printing" | "blocked" | "completed" | "cancelled" | "failed" | "unknown";
+  reasons: string[];
+  message: string;
+};
+
+export type PrinterStatus = {
+  state: "idle" | "processing" | "stopped" | "unknown";
+  reasons: string[];
+  message: string;
 };
 
 export type SubmitResult = { jobId: string; raw: string };
