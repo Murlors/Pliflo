@@ -23,6 +23,9 @@ The first release targets **macOS**. The architecture keeps Windows support in m
 - Submit each document as its own print job, so one document does not block configuration or cancellation of the rest of the batch.
 - Track queued, submitted, printing, completed, cancelled and failed states separately.
 - Keep lightweight local history and optionally restore an unfinished batch.
+- Review each file's sides, tray, copies and page settings before submission. Batch changes apply to unsubmitted files and subsequent imports; submitted settings stay read-only.
+- Remove files directly from the queue without deleting sources, or requeue failed/cancelled attempts individually and failed files together. Requeueing rebuilds printable artifacts and never automatically submits a new print job.
+- Keep printer warnings visible and expand history to inspect submitted settings and system reasons. Older entries without a submission snapshot are explicitly identified.
 - Switch between Chinese and English, with system/light/dark appearance modes.
 
 Pliflo does not upload documents or require a server. Inspection, conversion, preview state and print orchestration stay on the local machine.
@@ -44,7 +47,7 @@ XLSX printing is intentionally pragmatic rather than an Excel-compatible print e
 
 ## Printing model
 
-On macOS, Pliflo talks to the system printing stack through CUPS commands. Printer capabilities are discovered from the device before printer-specific controls are shown.
+On macOS, Pliflo submits through CUPS commands and reads structured printer/job status through the system libcups library. Printer capabilities are discovered from the device before printer-specific controls are shown. Queue waiting, held/stopped, processing, cancelled, aborted and system-completed jobs are distinguished. System completion is not independent confirmation of physical output. Local CUPS reports may be cached; generic paper-empty reports do not identify a tray and are displayed as such. A failed status query retains the last report with a visible unavailable-state notice.
 
 There is an intentional distinction between **job submitted** and **printing completed**. A successful submission only means macOS accepted the job; completion is shown after the operating system reports that the job has finished.
 

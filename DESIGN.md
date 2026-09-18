@@ -85,6 +85,8 @@ The macOS release uses an overlay title bar with the native traffic lights above
 - `submitted` means the operating system accepted the job.
 - `printing` and `completed` are distinct from submission and should never be implied prematurely.
 - Failures and cancellation must remain visible and recoverable in history.
+- Queue rows expose removal and requeue actions directly. Requeue creates a fresh attempt; history stays intact. The submission review lists effective per-file settings before confirmation.
+- Settings explicitly identify current-file versus batch scope. Submitted settings are read-only. Persistent printer reports and history details retain system reasons without inventing tray-specific status.
 - Printer-dependent capabilities must reflect what the local device/driver reports.
 
 ## Design Guardrails

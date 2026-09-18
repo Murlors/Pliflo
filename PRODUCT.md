@@ -35,7 +35,9 @@ The product is a focused desktop utility used during routine document handling. 
 - Imported files become visible before expensive rendering completes. Local preparation is bounded, page output is spooled incrementally, and obsolete preparation is cancellable so large files do not monopolize frontend memory or keep stale work running unnecessarily.
 - Printer discovery, presets, queue management, cancellation, history and explicit error states.
 - Every document is submitted as its own system print job by default after local preparation succeeds.
-- macOS printing uses the local CUPS command-line interface to keep runtime size and maintenance cost low.
+- macOS submission uses the local CUPS command-line interface; structured status uses system libcups without adding a runtime dependency.
+- Submission requires a per-file review of effective settings. Failed/cancelled attempts can be requeued with a new identity while preserving history; requeueing does not print automatically. Removing a batch entry never deletes its source.
+- Printer warnings stay visible, including generic paper-empty reports when a tray cannot be identified. History preserves submission snapshots and system reasons; system completion does not independently confirm physical output.
 - System submission and physical completion are separate states in the product model.
 - Real printing must never be triggered during development or automated verification without the user’s explicit confirmation.
 - Device-specific options are limited by the actual printer and driver capabilities available on the host.
