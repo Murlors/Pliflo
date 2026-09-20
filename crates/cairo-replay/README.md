@@ -69,7 +69,7 @@ ligature mapping differences. Text remains embedded text/vector content.
 Document fonts are loaded into this private map, using their OpenType family
 names and document aliases. Font files and caches live beside the output in a
 temporary directory and are removed when rendering ends. The macOS map uses
-standard system/user font directories and self-contained synthetic-style rules;
+font files enumerated by CoreText and self-contained synthetic-style rules;
 it does not require Homebrew's font configuration on the receiving machine.
 The macOS system font catalog is initialized once per process; restart after
 installing or removing system fonts. Embedded fonts remain private to each PDF.

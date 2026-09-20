@@ -1,4 +1,4 @@
-//! macOS 的分发包不依赖 Homebrew 的 fonts.conf；仅向私有 map 提供系统字体目录。
+//! macOS 的分发包不依赖 Homebrew 的 fonts.conf；由 CoreText 枚举系统可用字体。
 use anyhow::{ensure, Context, Result};
 use pango::glib::translate::ToGlibPtr;
 use std::{
@@ -11,12 +11,28 @@ use std::{
 unsafe extern "C" {
     fn FcConfigCreate() -> *mut c_void;
     fn FcConfigDestroy(config: *mut c_void);
-    fn FcConfigAppFontAddDir(config: *mut c_void, directory: *const u8) -> c_int;
+    fn FcConfigAppFontAddFile(config: *mut c_void, file: *const u8) -> c_int;
     fn FcConfigParseAndLoadFromMemory(
         config: *mut c_void,
         xml: *const u8,
         complain: c_int,
     ) -> c_int;
+}
+#[link(name = "CoreText", kind = "framework")]
+unsafe extern "C" {
+    fn CTFontManagerCopyAvailableFontURLs() -> *const c_void;
+}
+#[link(name = "CoreFoundation", kind = "framework")]
+unsafe extern "C" {
+    fn CFArrayGetCount(array: *const c_void) -> isize;
+    fn CFArrayGetValueAtIndex(array: *const c_void, index: isize) -> *const c_void;
+    fn CFURLGetFileSystemRepresentation(
+        url: *const c_void,
+        resolve: u8,
+        buffer: *mut u8,
+        size: isize,
+    ) -> u8;
+    fn CFRelease(value: *const c_void);
 }
 #[link(name = "pangoft2-1.0")]
 unsafe extern "C" {
@@ -82,37 +98,23 @@ fn system_fonts(cache: &Path) -> Result<Config> {
         unsafe { FcConfigParseAndLoadFromMemory(config.0.as_ptr(), xml.as_ptr().cast(), 1) } != 0,
         "Cannot configure PDF fonts"
     );
-    let mut directories = vec!["/System/Library/Fonts".into(), "/Library/Fonts".into()];
-    // macOS 将苹方等系统字体放在带版本号的字体资源目录；不能固定为 Font7。
-    for assets in ["/System/Library/Assets", "/System/Library/AssetsV2"] {
-        if let Ok(entries) = std::fs::read_dir(assets) {
-            for entry in entries {
-                let entry = entry?;
-                if entry
-                    .file_name()
-                    .to_string_lossy()
-                    .starts_with("com_apple_MobileAsset_Font")
-                {
-                    directories.push(entry.path());
-                }
-            }
+    // 由系统提供实际字体路径，覆盖不同 macOS 版本的私有目录和字体资源卷。
+    // Copy 返回拥有的 CFArray；其中 URL 借用至数组释放，不修改系统注册状态。
+    let urls = unsafe { CTFontManagerCopyAvailableFontURLs() };
+    ensure!(!urls.is_null(), "Cannot enumerate system font files");
+    let mut loaded = 0;
+    for index in 0..unsafe { CFArrayGetCount(urls) } {
+        let url = unsafe { CFArrayGetValueAtIndex(urls, index) };
+        let mut path = [0_u8; 4096];
+        if unsafe {
+            CFURLGetFileSystemRepresentation(url, 1, path.as_mut_ptr(), path.len() as isize)
+        } != 0
+            && unsafe { FcConfigAppFontAddFile(config.0.as_ptr(), path.as_ptr()) } != 0
+        {
+            loaded += 1;
         }
     }
-    if let Some(home) = std::env::var_os("HOME") {
-        directories.push(Path::new(&home).join("Library/Fonts"));
-    }
-    for directory in directories {
-        if !directory.is_dir() {
-            continue;
-        }
-        use std::os::unix::ffi::OsStrExt;
-        let path =
-            CString::new(directory.as_os_str().as_bytes()).context("Invalid font directory")?;
-        // 仅扫描本地标准字体目录；不改变 FcConfig 的进程默认值。
-        ensure!(
-            unsafe { FcConfigAppFontAddDir(config.0.as_ptr(), path.as_ptr().cast()) } != 0,
-            "Cannot load system font directory"
-        );
-    }
+    unsafe { CFRelease(urls) };
+    ensure!(loaded > 0, "Cannot load system font files");
     Ok(config)
 }
