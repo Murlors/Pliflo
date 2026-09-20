@@ -35,25 +35,20 @@ jobs:
       - name: Install Cairo and Pango
         run: brew install pkgconf cairo pango
 
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ". -> src-tauri/target"
-
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
       - name: Check frontend
-        run: bun run check
-
-      - name: Check native code
-        run: cargo test --workspace --locked
+        run: bun x --no-install vp run check
 
       - name: Check recording protocol
-        run: bun run test:protocol
+        run: bun x --no-install vp run test:protocol
 
       - name: Build application with native libraries
-        run: bun run desktop:build
+        run: bun x --no-install vp run desktop:build
+
+      - name: Check native code
+        run: bun x --no-install vp run test:native --release
 
       - name: Upload release assets
         env:
