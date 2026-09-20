@@ -1,0 +1,23 @@
+[package]
+name = "canvas-cairo-replay"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Portable Cairo/Pango renderer for Canvas JSON recording v1"
+
+[[bin]]
+name = "canvas-cairo-pdf"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.23"
+cairo-rs = { version = "0.22", default-features = false, features = ["pdf", "png"] }
+pango = { version = "0.22", features = ["v1_44"] }
+pangocairo = "0.22"
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+lopdf.workspace = true
+tempfile = "3"

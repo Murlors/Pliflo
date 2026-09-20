@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { marked } from "marked";
+import { createRecordedCanvas, recordingPage } from "./cairo";
 import type { DocumentFormat, DocumentInfo, DocumentRenderOptions } from "../app/types";
 
 const A4 = { widthPt: 595.28, heightPt: 841.89 };
@@ -10,12 +10,7 @@ const EMU_PER_POINT = 12_700;
 export type FileInfo = { path: string; name: string; sizeBytes: number };
 type RenderedPage = {
   bytes: Uint8Array;
-  pixelWidth: number;
-  pixelHeight: number;
-  pageWidthPt: number;
-  pageHeightPt: number;
 };
-type RenderedPageFile = Omit<RenderedPage, "bytes"> & { path: string };
 type PageSink = (page: RenderedPage) => Promise<void>;
 
 export const SUPPORTED_EXTENSIONS = [
@@ -49,33 +44,9 @@ async function canvasToPage(
   pageWidthPt: number,
   pageHeightPt: number,
 ): Promise<RenderedPage> {
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (value) => (value ? resolve(value) : reject(new Error("Could not encode rendered page."))),
-      "image/png",
-    );
-  });
   return {
-    bytes: new Uint8Array(await blob.arrayBuffer()),
-    pixelWidth: canvas.width,
-    pixelHeight: canvas.height,
-    pageWidthPt,
-    pageHeightPt,
+    bytes: await recordingPage(canvas, pageWidthPt, pageHeightPt),
   };
-}
-
-function bitmapToCanvas(bitmap: ImageBitmap) {
-  const canvas = document.createElement("canvas");
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
-  const context = canvas.getContext("2d");
-  if (!context) {
-    bitmap.close();
-    throw new Error("Canvas rendering is unavailable.");
-  }
-  context.drawImage(bitmap, 0, 0);
-  bitmap.close();
-  return canvas;
 }
 
 function pagePixels(widthPt: number, heightPt: number) {
@@ -85,27 +56,21 @@ function pagePixels(widthPt: number, heightPt: number) {
 
 async function createPdfSession() {
   const session = await invoke<string>("begin_printable_pdf");
-  const pages: RenderedPageFile[] = [];
   let index = 0;
   return {
     add: async (page: RenderedPage) => {
-      pages.push(
-        await invoke<RenderedPageFile>("append_printable_pdf_page", page.bytes, {
-          headers: {
-            "x-pliflo-session": session,
-            "x-pliflo-index": String(index),
-            "x-pliflo-pixel-width": String(page.pixelWidth),
-            "x-pliflo-pixel-height": String(page.pixelHeight),
-            "x-pliflo-page-width-pt": String(page.pageWidthPt),
-            "x-pliflo-page-height-pt": String(page.pageHeightPt),
-          },
-        }),
-      );
+      await invoke("append_vector_pdf_page", page.bytes, {
+        headers: {
+          "x-pliflo-session": session,
+          "x-pliflo-index": String(index),
+        },
+      });
       index += 1;
     },
-    finish: () => invoke<string>("finalize_printable_pdf", { session, pages }),
+    finish: () => invoke<string>("finalize_vector_pdf", { session, count: index }),
     abort: () => invoke("cleanup_render_session", { session }).catch(() => undefined),
-    count: () => pages.length,
+    cancel: () => invoke("cancel_vector_pdf", { session }).catch(() => undefined),
+    count: () => index,
   };
 }
 
@@ -147,7 +112,7 @@ async function renderImage(path: string, options: DocumentRenderOptions, onPage:
     ? { widthPt: A4.heightPt, heightPt: A4.widthPt }
     : { widthPt: A4.widthPt, heightPt: A4.heightPt };
   const pixels = pagePixels(page.widthPt, page.heightPt);
-  const canvas = document.createElement("canvas");
+  const canvas = createRecordedCanvas();
   canvas.width = pixels.width;
   canvas.height = pixels.height;
   const context = canvas.getContext("2d");
@@ -223,7 +188,7 @@ async function inlineMarkdownImages(html: string, sourcePath: string) {
 const MARKDOWN_PAGE = { width: 794, height: 1123, margin: 64, scale: 2 };
 
 function markdownCanvas() {
-  const canvas = document.createElement("canvas");
+  const canvas = createRecordedCanvas();
   canvas.width = MARKDOWN_PAGE.width * MARKDOWN_PAGE.scale;
   canvas.height = MARKDOWN_PAGE.height * MARKDOWN_PAGE.scale;
   const context = canvas.getContext("2d");
@@ -454,6 +419,7 @@ async function renderMarkdownHtml(html: string, onPage: PageSink) {
 }
 
 async function renderMarkdown(path: string, onPage: PageSink) {
+  const { marked } = await import("marked");
   const source = new TextDecoder().decode(await readLocalFile(path));
   const prepared = await inlineMarkdownImages(
     sanitizeMarkdown(await marked.parse(source, { gfm: true, breaks: false })),
@@ -469,15 +435,14 @@ async function renderMarkdown(path: string, onPage: PageSink) {
 async function renderDocx(path: string, onPage: PageSink) {
   const { DocxDocument } = await import("@silurus/ooxml/docx");
   const doc = await DocxDocument.load(await readLocalFile(path), {
-    mode: "worker",
+    mode: "main",
   });
   try {
     await doc.waitUntilLayoutComplete();
     for (let index = 0; index < doc.pageCount; index += 1) {
       const size = doc.pageSize(index);
-      const canvas = bitmapToCanvas(
-        await doc.renderPageToBitmap(index, { width: Math.round(size.widthPt * 2), dpr: 1 }),
-      );
+      const canvas = createRecordedCanvas();
+      await doc.renderPage(canvas, index, { width: Math.round(size.widthPt * 2), dpr: 1 });
       await onPage(await canvasToPage(canvas, size.widthPt, size.heightPt));
     }
   } finally {
@@ -488,16 +453,15 @@ async function renderDocx(path: string, onPage: PageSink) {
 async function renderPptx(path: string, onPage: PageSink) {
   const { PptxPresentation } = await import("@silurus/ooxml/pptx");
   const presentation = await PptxPresentation.load(await readLocalFile(path), {
-    mode: "worker",
+    mode: "main",
   });
   try {
     await presentation.waitUntilLayoutComplete();
     const widthPt = presentation.slideWidth / EMU_PER_POINT;
     const heightPt = presentation.slideHeight / EMU_PER_POINT;
     for (let index = 0; index < presentation.slideCount; index += 1) {
-      const canvas = bitmapToCanvas(
-        await presentation.renderSlideToBitmap(index, { width: 1600, dpr: 1 }),
-      );
+      const canvas = createRecordedCanvas();
+      await presentation.renderSlide(canvas, index, { width: 1600, dpr: 1 });
       await onPage(await canvasToPage(canvas, widthPt, heightPt));
     }
   } finally {
@@ -516,14 +480,13 @@ function xlsxUsedBounds(sheet: { rows: Array<{ index: number; cells: Array<{ col
   return { rows: Math.max(1, maxRow + 1), cols: Math.max(1, maxCol + 1) };
 }
 
-function excelColumnPixels(width: number) {
-  return Math.max(8, Math.floor(width * 7 + 5));
-}
-
 async function renderXlsx(path: string, options: DocumentRenderOptions, onPage: PageSink) {
-  const { XlsxWorkbook } = await import("@silurus/ooxml/xlsx");
+  const [{ XlsxWorkbook }, { fitWorksheetWidth }] = await Promise.all([
+    import("@silurus/ooxml/xlsx"),
+    import("./xlsx-fit"),
+  ]);
   const workbook = await XlsxWorkbook.load(await readLocalFile(path), {
-    mode: "worker",
+    mode: "main",
   });
   try {
     const sheetIndexes =
@@ -540,12 +503,10 @@ async function renderXlsx(path: string, options: DocumentRenderOptions, onPage: 
       const page = { widthPt: A4.heightPt, heightPt: A4.widthPt };
       const pixels = pagePixels(page.widthPt, page.heightPt);
       const margin = 48;
-      let widthPx = 0;
-      for (let col = 0; col < used.cols; col += 1) {
-        widthPx += excelColumnPixels(sheet.colWidths[col] ?? sheet.defaultColWidth);
-      }
-      const fitScale = Math.min(1, (pixels.width - margin * 2) / Math.max(1, widthPx));
-      const cellScale = options.xlsxScale === "actual" ? 1 : fitScale;
+      const cellScale =
+        options.xlsxScale === "actual"
+          ? 1
+          : fitWorksheetWidth(sheet, used.cols, pixels.width, margin);
       const availableHeight = (pixels.height - margin * 2) / cellScale;
       let startRow = 0;
       while (startRow < used.rows) {
@@ -559,7 +520,9 @@ async function renderXlsx(path: string, options: DocumentRenderOptions, onPage: 
           height += rowHeightPx;
           endRow += 1;
         }
-        const rendered = await workbook.renderViewportToBitmap(
+        const canvas = createRecordedCanvas();
+        await workbook.renderViewport(
+          canvas,
           sheetIndex,
           { row: startRow, col: 0, rows: Math.max(1, endRow - startRow), cols: used.cols },
           {
@@ -571,18 +534,6 @@ async function renderXlsx(path: string, options: DocumentRenderOptions, onPage: 
             scrollOffsetY: -margin,
           },
         );
-        const canvas = document.createElement("canvas");
-        canvas.width = pixels.width;
-        canvas.height = pixels.height;
-        const context = canvas.getContext("2d");
-        if (!context) {
-          rendered.close();
-          throw new Error("Canvas rendering is unavailable.");
-        }
-        context.fillStyle = "#fff";
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        context.drawImage(rendered, 0, 0);
-        rendered.close();
         await onPage(await canvasToPage(canvas, page.widthPt, page.heightPt));
         startRow = Math.max(endRow, startRow + 1);
       }
@@ -610,6 +561,10 @@ export async function prepareDocument(
   }
 
   const session = await createPdfSession();
+  const cancel = () => {
+    void session.cancel();
+  };
+  signal?.addEventListener("abort", cancel, { once: true });
   const onPage: PageSink = async (page) => {
     signal?.throwIfAborted();
     await session.add(page);
@@ -617,6 +572,7 @@ export async function prepareDocument(
   };
   let sheetNames: string[] | undefined;
   try {
+    signal?.throwIfAborted();
     if (format === "docx") await renderDocx(file.path, onPage);
     else if (format === "pptx") await renderPptx(file.path, onPage);
     else if (format === "xlsx") {
@@ -627,6 +583,7 @@ export async function prepareDocument(
 
     signal?.throwIfAborted();
     const printPath = await session.finish();
+    signal?.throwIfAborted();
     return {
       ...file,
       printPath,
@@ -638,6 +595,8 @@ export async function prepareDocument(
   } catch (error) {
     await session.abort();
     throw error;
+  } finally {
+    signal?.removeEventListener("abort", cancel);
   }
 }
 

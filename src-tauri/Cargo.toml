@@ -13,8 +13,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-png = "0.17"
-serde = { version = "1", features = ["derive"] }
+canvas-cairo-replay = { path = "../crates/cairo-replay" }
+serde.workspace = true
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
-lopdf = "0.38"
+lopdf.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

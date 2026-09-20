@@ -1,0 +1,12 @@
+[workspace]
+members = ["src-tauri", "crates/cairo-replay"]
+resolver = "2"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 仅读取 PDF 页数；保留并行解析，不引入未使用的日期类型适配。
+lopdf = { version = "0.45", default-features = false, features = ["rayon"] }
+
+[profile.release]
+strip = "symbols"

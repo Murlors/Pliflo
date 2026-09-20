@@ -1,10 +1,9 @@
-use lopdf::{dictionary, Dictionary, Document, Object, Stream};
+mod vector_pdf;
 use serde::{Deserialize, Serialize};
 mod print_status;
 use print_status::{get_print_job_status, get_printer_status};
 use std::{
     fs,
-    io::Cursor,
     path::{Path, PathBuf},
     process::Command,
     sync::atomic::{AtomicU64, Ordering},
@@ -80,16 +79,6 @@ struct FileInfo {
     size_bytes: u64,
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RenderedPageFile {
-    path: String,
-    pixel_width: u32,
-    pixel_height: u32,
-    page_width_pt: f32,
-    page_height_pt: f32,
-}
-
 fn rendered_root() -> PathBuf {
     std::env::temp_dir().join("pliflo-rendered")
 }
@@ -107,106 +96,14 @@ fn create_rendered_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-fn decode_png_rgb(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32), String> {
-    let mut decoder = png::Decoder::new(Cursor::new(bytes));
-    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let mut reader = decoder
-        .read_info()
-        .map_err(|error| format!("Cannot decode rendered PNG: {error}"))?;
-    let mut buffer = vec![0; reader.output_buffer_size()];
-    let info = reader
-        .next_frame(&mut buffer)
-        .map_err(|error| format!("Cannot decode rendered PNG: {error}"))?;
-    let source = &buffer[..info.buffer_size()];
-    let mut rgb = Vec::with_capacity(info.width as usize * info.height as usize * 3);
-    match info.color_type {
-        png::ColorType::Rgb => rgb.extend_from_slice(source),
-        png::ColorType::Rgba => {
-            for pixel in source.chunks_exact(4) {
-                let alpha = pixel[3] as u16;
-                for channel in &pixel[..3] {
-                    rgb.push(((*channel as u16 * alpha + 255 * (255 - alpha) + 127) / 255) as u8);
-                }
-            }
-        }
-        png::ColorType::Grayscale => {
-            for gray in source {
-                rgb.extend_from_slice(&[*gray, *gray, *gray]);
-            }
-        }
-        png::ColorType::GrayscaleAlpha => {
-            for pixel in source.chunks_exact(2) {
-                let alpha = pixel[1] as u16;
-                let gray = (pixel[0] as u16 * alpha + 255 * (255 - alpha) + 127) / 255;
-                rgb.extend_from_slice(&[gray as u8, gray as u8, gray as u8]);
-            }
-        }
-        png::ColorType::Indexed => return Err("Rendered PNG used an unsupported indexed palette.".to_string()),
-    }
-    Ok((rgb, info.width, info.height))
-}
-
-fn add_png_page(
-    doc: &mut Document,
-    pages_id: lopdf::ObjectId,
-    png: &[u8],
-    expected_pixel_width: u32,
-    expected_pixel_height: u32,
-    page_width_pt: f32,
-    page_height_pt: f32,
-) -> Result<lopdf::ObjectId, String> {
-    if expected_pixel_width == 0
-        || expected_pixel_height == 0
-        || page_width_pt <= 0.0
-        || page_height_pt <= 0.0
-    {
-        return Err("Rendered page dimensions are invalid.".to_string());
-    }
-    let (rgb, pixel_width, pixel_height) = decode_png_rgb(png)?;
-    if pixel_width != expected_pixel_width || pixel_height != expected_pixel_height {
-        return Err("Rendered PNG dimensions do not match page metadata.".to_string());
-    }
-    let image_id = doc.add_object(Stream::new(
-        dictionary! {
-            "Type" => "XObject",
-            "Subtype" => "Image",
-            "Width" => pixel_width as i64,
-            "Height" => pixel_height as i64,
-            "ColorSpace" => "DeviceRGB",
-            "BitsPerComponent" => 8,
-        },
-        rgb,
-    ));
-    let content = format!(
-        "q\n{} 0 0 {} 0 0 cm\n/Im0 Do\nQ\n",
-        page_width_pt, page_height_pt
-    );
-    let content_id = doc.add_object(Stream::new(Dictionary::new(), content.into_bytes()));
-    let resources_id = doc.add_object(dictionary! {
-        "XObject" => dictionary! { "Im0" => image_id },
-    });
-    Ok(doc.add_object(dictionary! {
-        "Type" => "Page",
-        "Parent" => pages_id,
-        "Resources" => resources_id,
-        "MediaBox" => vec![
-            0.into(),
-            0.into(),
-            Object::Real(page_width_pt),
-            Object::Real(page_height_pt),
-        ],
-        "Contents" => content_id,
-    }))
-}
-
 #[tauri::command]
 fn inspect_files(paths: Vec<String>) -> Result<Vec<FileInfo>, String> {
     paths
         .into_iter()
         .map(|path| {
             let file_path = Path::new(&path);
-            let metadata = fs::metadata(file_path)
-                .map_err(|error| format!("Cannot read {path}: {error}"))?;
+            let metadata =
+                fs::metadata(file_path).map_err(|error| format!("Cannot read {path}: {error}"))?;
             if !metadata.is_file() {
                 return Err(format!("Not a file: {path}"));
             }
@@ -227,7 +124,8 @@ fn inspect_files(paths: Vec<String>) -> Result<Vec<FileInfo>, String> {
 #[tauri::command]
 fn read_local_file(path: String) -> Result<tauri::ipc::Response, String> {
     let file_path = Path::new(&path);
-    let metadata = fs::metadata(file_path).map_err(|error| format!("Cannot read {path}: {error}"))?;
+    let metadata =
+        fs::metadata(file_path).map_err(|error| format!("Cannot read {path}: {error}"))?;
     if !metadata.is_file() {
         return Err(format!("Not a file: {path}"));
     }
@@ -243,7 +141,7 @@ fn checked_render_session(session: &str) -> Result<PathBuf, String> {
     let canonical_session = PathBuf::from(session)
         .canonicalize()
         .map_err(|error| format!("Cannot access render session: {error}"))?;
-    if !canonical_session.starts_with(&canonical_root) || !canonical_session.is_dir() {
+    if canonical_session.parent() != Some(canonical_root.as_path()) || !canonical_session.is_dir() {
         return Err("Invalid render session.".to_string());
     }
     Ok(canonical_session)
@@ -273,85 +171,6 @@ where
 }
 
 #[tauri::command]
-fn append_printable_pdf_page(request: tauri::ipc::Request<'_>) -> Result<RenderedPageFile, String> {
-    let session = request_header(&request, "x-pliflo-session")?.to_string();
-    let index: usize = parsed_request_header(&request, "x-pliflo-index")?;
-    let pixel_width: u32 = parsed_request_header(&request, "x-pliflo-pixel-width")?;
-    let pixel_height: u32 = parsed_request_header(&request, "x-pliflo-pixel-height")?;
-    let page_width_pt: f32 = parsed_request_header(&request, "x-pliflo-page-width-pt")?;
-    let page_height_pt: f32 = parsed_request_header(&request, "x-pliflo-page-height-pt")?;
-    if pixel_width == 0 || pixel_height == 0 || page_width_pt <= 0.0 || page_height_pt <= 0.0
-    {
-        return Err("Rendered page dimensions are invalid.".to_string());
-    }
-    let bytes = match request.body() {
-        tauri::ipc::InvokeBody::Raw(bytes) => bytes,
-        _ => return Err("Rendered page must use binary IPC.".to_string()),
-    };
-    let dir = checked_render_session(&session)?;
-    let path = dir.join(format!("page-{index:06}.png"));
-    fs::write(&path, bytes)
-        .map_err(|error| format!("Cannot cache rendered page: {error}"))?;
-    Ok(RenderedPageFile {
-        path: path.to_string_lossy().to_string(),
-        pixel_width,
-        pixel_height,
-        page_width_pt,
-        page_height_pt,
-    })
-}
-
-#[tauri::command]
-fn finalize_printable_pdf(session: String, pages: Vec<RenderedPageFile>) -> Result<String, String> {
-    if pages.is_empty() {
-        return Err("The document did not produce any printable pages.".to_string());
-    }
-    let dir = checked_render_session(&session)?;
-    let output = dir.join("printable.pdf");
-    let mut doc = Document::with_version("1.5");
-    let pages_id = doc.new_object_id();
-    let mut page_ids = Vec::with_capacity(pages.len());
-    for page in &pages {
-        let path = PathBuf::from(&page.path)
-            .canonicalize()
-            .map_err(|error| format!("Cannot access rendered page: {error}"))?;
-        if path.parent() != Some(dir.as_path()) {
-            return Err("Rendered page is outside its render session.".to_string());
-        }
-        let png = fs::read(&path).map_err(|error| format!("Cannot read rendered page: {error}"))?;
-        page_ids.push(add_png_page(
-            &mut doc,
-            pages_id,
-            &png,
-            page.pixel_width,
-            page.pixel_height,
-            page.page_width_pt,
-            page.page_height_pt,
-        )?);
-    }
-    doc.objects.insert(
-        pages_id,
-        Object::Dictionary(dictionary! {
-            "Type" => "Pages",
-            "Kids" => page_ids.iter().copied().map(Object::Reference).collect::<Vec<_>>(),
-            "Count" => page_ids.len() as i64,
-        }),
-    );
-    let catalog_id = doc.add_object(dictionary! {
-        "Type" => "Catalog",
-        "Pages" => pages_id,
-    });
-    doc.trailer.set("Root", catalog_id);
-    doc.compress();
-    doc.save(&output)
-        .map_err(|error| format!("Cannot save printable PDF: {error}"))?;
-    for page in pages {
-        let _ = fs::remove_file(page.path);
-    }
-    Ok(output.to_string_lossy().to_string())
-}
-
-#[tauri::command]
 fn cleanup_render_session(session: String) -> Result<(), String> {
     let dir = checked_render_session(&session)?;
     fs::remove_dir_all(dir).map_err(|error| format!("Cannot remove render session: {error}"))
@@ -362,8 +181,12 @@ fn cleanup_printable_pdf(path: String) -> Result<(), String> {
     let root = rendered_root();
     let candidate = PathBuf::from(path);
     let canonical_root = root.canonicalize().unwrap_or(root);
-    let Some(parent) = candidate.parent() else { return Ok(()); };
-    let canonical_parent = parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf());
+    let Some(parent) = candidate.parent() else {
+        return Ok(());
+    };
+    let canonical_parent = parent
+        .canonicalize()
+        .unwrap_or_else(|_| parent.to_path_buf());
     if canonical_parent.starts_with(&canonical_root) {
         let _ = fs::remove_dir_all(canonical_parent);
     }
@@ -373,13 +196,18 @@ fn cleanup_printable_pdf(path: String) -> Result<(), String> {
 #[tauri::command]
 fn cleanup_stale_printable_pdfs() -> Result<(), String> {
     let root = rendered_root();
-    let Ok(entries) = fs::read_dir(&root) else { return Ok(()); };
+    let Ok(entries) = fs::read_dir(&root) else {
+        return Ok(());
+    };
     let cutoff = SystemTime::now()
         .checked_sub(Duration::from_secs(48 * 60 * 60))
         .unwrap_or(UNIX_EPOCH);
     for entry in entries.flatten() {
         let path = entry.path();
-        let modified = entry.metadata().and_then(|meta| meta.modified()).unwrap_or(SystemTime::now());
+        let modified = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .unwrap_or(SystemTime::now());
         if modified < cutoff {
             let _ = fs::remove_dir_all(path);
         }
@@ -483,10 +311,19 @@ fn printer_assignment(key: &str, value: &str) -> String {
 }
 
 /// 驱动与标准 IPP 参数保持一致，显式单面不能依赖打印机默认值。
-fn duplex_assignments(groups: &[(String, Vec<PrinterOption>)], mode: &str) -> Result<Vec<String>, String> {
+fn duplex_assignments(
+    groups: &[(String, Vec<PrinterOption>)],
+    mode: &str,
+) -> Result<Vec<String>, String> {
     let (candidates, standard) = match mode {
-        "long" => (&["DuplexNoTumble", "two-sided-long-edge"][..], "sides=two-sided-long-edge"),
-        "short" => (&["DuplexTumble", "two-sided-short-edge"][..], "sides=two-sided-short-edge"),
+        "long" => (
+            &["DuplexNoTumble", "two-sided-long-edge"][..],
+            "sides=two-sided-long-edge",
+        ),
+        "short" => (
+            &["DuplexTumble", "two-sided-short-edge"][..],
+            "sides=two-sided-short-edge",
+        ),
         "none" => (&["None", "one-sided"][..], "sides=one-sided"),
         _ => return Err("Invalid duplex mode".into()),
     };
@@ -495,7 +332,9 @@ fn duplex_assignments(groups: &[(String, Vec<PrinterOption>)], mode: &str) -> Re
         let value = find_option_value(options, candidates)
             .ok_or("The selected duplex mode is not supported by this printer.")?;
         let driver = printer_assignment(key, value);
-        if driver != standard { assignments.push(driver); }
+        if driver != standard {
+            assignments.push(driver);
+        }
     }
     assignments.push(standard.into());
     Ok(assignments)
@@ -826,7 +665,9 @@ fn submit_print_job(
         "-o",
         media.as_str(),
     ];
-    for value in &duplex { args.extend(["-o", value.as_str()]); }
+    for value in &duplex {
+        args.extend(["-o", value.as_str()]);
+    }
     if let Some(value) = color.as_deref() {
         args.extend(["-o", value]);
     }
@@ -883,9 +724,8 @@ fn cancel_print_job(_job_id: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_page_range, parse_default_destination, parse_print_job_id,
-        parse_printer_option, print_job_destination, supports_color, supports_duplex,
-        PrinterOption,
+        normalize_page_range, parse_default_destination, parse_print_job_id, parse_printer_option,
+        print_job_destination, supports_color, supports_duplex, PrinterOption,
     };
 
     fn option(value: &str) -> PrinterOption {
@@ -899,12 +739,17 @@ mod tests {
     #[test]
     fn overrides_duplex_default_for_airprint_without_submitting() {
         let groups = vec![parse_printer_option(
-            "Duplex/2-Sided Printing: None *DuplexNoTumble DuplexTumble"
-        ).unwrap()];
-        assert_eq!(super::duplex_assignments(&groups, "none").unwrap(),
-            vec!["Duplex=None", "sides=one-sided"]);
-        assert_eq!(super::duplex_assignments(&groups, "short").unwrap(),
-            vec!["Duplex=DuplexTumble", "sides=two-sided-short-edge"]);
+            "Duplex/2-Sided Printing: None *DuplexNoTumble DuplexTumble",
+        )
+        .unwrap()];
+        assert_eq!(
+            super::duplex_assignments(&groups, "none").unwrap(),
+            vec!["Duplex=None", "sides=one-sided"]
+        );
+        assert_eq!(
+            super::duplex_assignments(&groups, "short").unwrap(),
+            vec!["Duplex=DuplexTumble", "sides=two-sided-short-edge"]
+        );
         let unsupported = vec![("Duplex".into(), vec![option("DuplexNoTumble")])];
         assert!(super::duplex_assignments(&unsupported, "none").is_err());
     }
@@ -1008,8 +853,9 @@ pub fn run() {
             read_local_file,
             inspect_pdfs,
             begin_printable_pdf,
-            append_printable_pdf_page,
-            finalize_printable_pdf,
+            vector_pdf::append_vector_pdf_page,
+            vector_pdf::finalize_vector_pdf,
+            vector_pdf::cancel_vector_pdf,
             cleanup_render_session,
             cleanup_printable_pdf,
             cleanup_stale_printable_pdfs,

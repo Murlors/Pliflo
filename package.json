@@ -2,40 +2,47 @@
   "name": "pliflo",
   "version": "1.1.1",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vp dev",
     "build": "vp build",
     "check": "vp check",
+    "test:protocol": "vp test run packages/canvas-recorder/tests",
     "lint": "vp lint",
     "preview": "vp preview",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build"
+    "desktop:build": "bun scripts/desktop-build.ts",
+    "test:rendering": "cargo build -p canvas-cairo-replay --bin canvas-cairo-pdf --locked && bun scripts/check-rendering.ts"
   },
   "dependencies": {
-    "@silurus/ooxml": "^0.87.0",
+    "@pliflo/canvas-recorder": "workspace:*",
+    "@silurus/ooxml": "0.87.0",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.3",
-    "lucide-react": "^1.46.0",
+    "lucide-react": "^1.47.0",
     "marked": "^18.0.13",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.4",
-    "@types/node": "^24.13.3",
+    "@tauri-apps/cli": "^2.11.5",
+    "@types/node": "^24.13.6",
     "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.2.7",
+    "@types/react-dom": "^19.3.0",
     "@unocss/preset-wind3": "^66.10.5",
     "@unocss/vite": "^66.10.5",
     "@vitejs/plugin-react": "^6.1.1",
-    "typescript": "~6.0.2",
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.2",
-    "vite-plus": "0.3.2"
+    "playwright-core": "1.63.0",
+    "typescript": "~7.0.2",
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.3",
+    "vite-plus": "0.3.3"
   },
   "overrides": {
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.2"
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.3"
   },
   "devEngines": {
     "packageManager": {
