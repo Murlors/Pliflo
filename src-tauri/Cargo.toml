@@ -1,6 +1,6 @@
 [package]
 name = "pliflo"
-version = "1.2.3"
+version = "1.2.4"
 description = "A focused local document batch printing desktop app"
 authors = ["Pliflo"]
 edition = "2021"
