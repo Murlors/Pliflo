@@ -49,6 +49,12 @@ commit private documents or generated PDFs. Use synthetic or authorized samples.
   and notices. Local builds may require a newer macOS version than release builds.
 - The release workflow can also be dispatched manually on a branch to validate
   both macOS architectures without uploading release assets or creating a tag.
+- Before choosing a release version or creating its tag, run that manual build
+  and confirm both architectures pass. Fix failures on the branch first.
+- Tag builds upload packages to a draft release. Publish the draft only after
+  both jobs succeed, both DMGs are uploaded and the English release notes are
+  reviewed. Remove abandoned drafts without deleting tags, commits or build
+  records; do not move published tags to retry a release.
 
 Project code uses [MIT](LICENSE); third-party notices remain in effect as described
 in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
