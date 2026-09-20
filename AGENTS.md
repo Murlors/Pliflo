@@ -47,6 +47,9 @@ src-tauri/
 - Keep the original local source path as the durable document identity. `printPath` is the current printable representation used by preview and submission.
 - PDF sources use the original file directly. DOCX, PPTX, XLSX, Markdown and images are prepared locally into temporary PDFs before reusing the shared settings, estimates, queue and CUPS path.
 - Prefer `@silurus/ooxml` for OOXML parsing/rendering where its API provides the needed layout data. Do not imply unsupported Office fidelity: XLSX pagination is Pliflo's used-range/scale model rather than a complete Excel print engine.
+- Use the local `@pliflo/canvas-recorder` Bun workspace and `canvas-cairo-replay` Cargo workspace for PDF output. Recording/protocol belongs in `packages/canvas-recorder`; native decoding, fonts and replay belong in `crates/cairo-replay`. Keep protocol changes and their tests together. Pliflo owns OOXML/document layout, Tauri IPC, session cleanup and product lifecycle. Do not add OOXML dependencies to the generic recorder or renderer.
+- Install from the repository root using `bun.lock` and the root `Cargo.lock`. Cargo output stays in `src-tauri/target` through `.cargo/config.toml`. Do not introduce nested lockfiles or sibling-checkout dependencies. Preserve the imported modules' MIT notices.
+- Record only canvases owned by document preparation. Send CCP1 binary pages, including raw PNG assets, and reject unsupported operations explicitly. Keep bundled WASM loading permitted by narrowly scoped CSP entries (`self` and `wasm-unsafe-eval`).
 - Generated artifacts belong only under Pliflo's system-temp render root. Remove superseded artifacts when safe, rebuild them from the source after restoring a persisted unfinished batch, and never delete or modify original user files.
 - Keep preparation asynchronous and bounded so importing many files does not create unbounded concurrent WASM/render work or memory use. Generated pages should be transferred as raw binary data and spooled incrementally to the temp render session rather than retained for the whole document in frontend memory or serialized through Base64.
 - Preparation invalidated by file removal or format-specific option changes should stop cooperatively when possible; stale results must never replace newer settings or resurrect a removed queue item.
@@ -109,5 +112,6 @@ Update the relevant document when behavior or architecture changes. Avoid duplic
 
 - Keep unrelated working-tree changes untouched.
 - Prefer focused commits and Chinese Conventional Commit messages that describe the actual diff.
-- Tags matching `v*` trigger `.github/workflows/release.yml`, which builds the universal macOS target and publishes a GitHub Release.
+- Use `bun run desktop:build` for packaging: it closes the native dylib dependency graph and derives the minimum macOS version from the executable and libraries. Do not impose a fixed-version packaging gate or require an override for newer local dependencies. Report the actual minimum OS without claiming unverified older-system compatibility. Bare `tauri build` does not include the native packaging step.
+- Tags matching `v*` trigger `.github/workflows/release.yml`, which builds separate Apple Silicon and Intel packages with matching native dependencies and publishes a GitHub Release.
 - Do not rewrite an already published release tag just to include later documentation changes. Use a new version/tag when a new release is intended.

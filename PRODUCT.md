@@ -49,7 +49,7 @@ The product name is Pliflo. The interface uses Lucide icons and never uses emoji
 
 ## Evidence on Hand
 
-The current repository contains a working macOS-first implementation with multi-format import, local document preparation, PDF-based preview/print normalization, settings, queue states, printer discovery, local persistence and Tauri packaging. The project also has an automated universal macOS release workflow. There are no customer testimonials, benchmark claims or external brand assets to fabricate.
+The current repository contains a macOS-first implementation with multi-format import, local Cairo/Pango PDF preparation, PDF-based preview/print normalization, settings, queue states, printer discovery, local persistence and Tauri packaging. Office layout runs in the system WebView; supported text and vectors remain searchable/vector content. Unsupported drawing fails visibly. Apple Silicon and Intel packages use architecture-matched native libraries, whose build versions determine minimum OS compatibility. There are no customer testimonials, benchmark claims or external brand assets to fabricate.
 
 ## Product Principles
 

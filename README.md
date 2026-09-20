@@ -41,7 +41,7 @@ Pliflo does not upload documents or require a server. Inspection, conversion, pr
 | Markdown                            | Parsed locally with `marked` and rendered with Pliflo's lightweight paged print style                                |
 | PNG / JPG / JPEG / WebP / GIF / BMP | Rendered locally to paper-sized pages with fit-page or actual-size behavior                                          |
 
-Non-PDF sources converge on the same model: **source file → local preparation → temporary printable PDF → existing preview/settings/queue/CUPS path**. Imported files appear in the batch as soon as metadata inspection finishes; generated documents are then prepared one at a time, with lossless PNG pages transferred through Tauri binary IPC and spooled into Pliflo's system-temp directory instead of retained as a full-document frontend buffer. Superseded or cancelled preparation is discarded and cleaned up, and persisted unfinished batches rebuild temporary artifacts from the original source.
+Non-PDF sources converge on the same model: **source file → WebView layout → Canvas recording → Rust Cairo/Pango → temporary PDF → preview/settings/queue/CUPS**. The local `@pliflo/canvas-recorder` and `canvas-cairo-replay` workspace libraries preserve supported text and vectors. Pages and embedded PNG assets travel through binary IPC and are spooled under the system-temp render directory. Documents are prepared one at a time; superseded/cancelled results are discarded and persisted batches rebuild from their original sources. Native cancellation is checked between pages. Complex drawing operations outside the renderer's supported Canvas subset fail visibly rather than silently dropping content.
 
 XLSX printing is intentionally pragmatic rather than an Excel-compatible print engine: it uses the worksheet used range, supports visible-sheet selection, fit-width and 100% scaling, and paginates vertically. Excel-specific print areas, repeating print titles and every page-layout feature are not currently reproduced. Image “actual size” uses 96 DPI when reliable physical-density metadata is unavailable.
 
@@ -70,12 +70,45 @@ During development, do not use the print action for routine testing. The UI, bui
 
 The project intentionally avoids a backend, database and heavyweight UI framework to keep the app small and maintenance straightforward.
 
+Office preparation uses main-thread Canvas recording. The Vite configuration
+excludes the three unused OOXML 0.87.0 render-worker entrypoints; parser workers
+and WASM remain available. Review these version-specific aliases when upgrading
+OOXML. The recorder emits binary PNG assets only. Release builds strip native
+symbols; PDF inspection retains parallel parsing without optional date adapters.
+
+XLSX geometry and Markdown parsing load only when preparing those formats, so
+opening the application does not preload their rendering dependencies.
+
+Dependency ownership follows the rendering boundary:
+
+- Pliflo owns OOXML, Markdown, React and the Tauri bridge. The Canvas recorder
+  has no runtime dependencies and does not install a second OOXML engine.
+- The Rust replay library owns Cairo/Pango and command decoding. Pliflo owns
+  PDF inspection through `lopdf`; replay tests share that workspace dependency.
+- `vite` is an alias of the same Vite Plus core used by `vite-plus`, not another
+  bundled engine. UnoCSS, TypeScript and browser regression tools are development
+  dependencies; their transitive packages are not shipped as a Node runtime.
+- Cargo can resolve different versions for build tools and runtime code. For
+  example, Tauri's icon code generation and menu library use different PNG
+  versions. Do not force transitive versions together without checking their
+  consumers and compatibility.
+- Native packaging follows actual dynamic-library links and deduplicates source
+  paths. Homebrew Cairo's X11 dependencies are part of that linked graph, even on
+  macOS; deleting them requires changing the native build, not removing files
+  from the app bundle.
+
+Inspect JavaScript resolution with `bun pm ls --all`, Rust consumers with
+`cargo tree --workspace --duplicates` and `cargo tree --invert <package>`, and
+packaged native sizes with the generated native bundle manifest. Lockfile entry
+counts and local dependency-cache sizes are not application bundle sizes.
+
 ## Development
 
 Requirements:
 
 - macOS for the currently supported native printing path
-- Rust toolchain
+- Rust 1.92+ toolchain (required by the Cairo/Pango Rust bindings)
+- Cairo/Pango and pkg-config (`brew install pkgconf cairo pango` on macOS)
 - Bun 1.4+
 - Tauri 2 system prerequisites
 
@@ -104,6 +137,33 @@ Build the macOS application and DMG:
 bun run desktop:build
 ```
 
+Use `bun run desktop:build --app-only` for a local `.app`, or `bun run desktop:build` for an app and DMG. The build script collects native dynamic libraries, strips local symbols from copies, rewrites their paths into the app's Frameworks directory and derives the minimum macOS version from the executable and libraries. Newer dependencies do not block packaging; the resulting app advertises their actual system requirement.
+
+The dependency/size inventory is written to `src-tauri/target/native-bundle-manifest.json`; temporary packaging copies are removed after restoring the original executable. Native license notices, Homebrew source inventories and build recipes are included under the app's `Contents/Resources/third-party` directory. Bun/Node are build tools, not bundled runtimes. Use this command rather than bare `tauri build` to include the native libraries.
+
+Rendering checks (no printing):
+
+The rendering command builds only the workspace renderer CLI, without compiling
+the desktop shell. It requires Chromium and Poppler as shown below.
+
+```bash
+bun run test:protocol
+cargo test --workspace --locked
+bunx --no-install playwright-core install chromium
+# Requires Poppler; use synthetic or locally authorized documents.
+bun run test:rendering /absolute/path/report.docx /absolute/path/slides.pptx /absolute/path/workbook.xlsx
+# Optional Chromium CPU profiles, saved beside the generated PDFs:
+PLIFLO_RENDER_PROFILE=1 bun run test:rendering /absolute/path/workbook.xlsx
+```
+
+The test transport sends page buffers as raw HTTP bodies intercepted by Playwright,
+not arrays serialized through browser bindings. Reports separate renderer process
+time (`nativeMs`) and recording payload size (`recordingBytes`) from total elapsed
+time. These are local regression measurements, not packaged-app startup or native
+Tauri IPC benchmarks; CPU profiling also adds measurement overhead.
+
+The browser regression runs the actual preparation code with an IPC test transport and the Rust renderer; it does not replace a packaged WKWebView smoke test. The Bun and Cargo workspaces share root lockfiles; protocol changes are checked with both producer and renderer tests. OOXML and format-specific layout are application dependencies, not recorder dependencies. Native binary redistribution also requires the bundled libraries' license notices and source-access obligations; the current packaging manifest is an inventory, not a completed license audit.
+
 ## Project structure
 
 ```text
@@ -117,6 +177,11 @@ src-tauri/
   src/lib.rs         Native file/PDF, printer and job-tracking commands
   icons/             Minimal desktop icon set + vector source
   tauri.conf.json    Window, security and bundle configuration
+packages/canvas-recorder/  Dependency-free TypeScript recorder and protocol
+crates/cairo-replay/       Rust Cairo/Pango renderer and CLI
+compat/ooxml/             Version-checked worksheet geometry extension
+scripts/                  Build, packaging and rendering verification
+Cargo.toml                Rust workspace; output remains in src-tauri/target
 AGENTS.md            Maintenance rules for future agents and contributors
 PRODUCT.md           Product behavior and scope
 DESIGN.md            Visual direction and interaction notes
@@ -131,9 +196,9 @@ DESIGN.md            Visual direction and interaction notes
 
 ## Releases
 
-Tags matching `v*` trigger the GitHub Actions release workflow. The workflow builds a universal macOS bundle for Apple Silicon and Intel, then publishes the generated app/DMG assets to a GitHub Release.
+Tags matching `v*` trigger the GitHub Actions release workflow. Apple Silicon and Intel packages are built on separate native runners so each includes matching Cairo/Pango libraries. The workflow uploads architecture-specific app archives and DMGs. Validate both architectures and dependency licenses before tagging a release.
 
-The first public build is unsigned and not notarized unless Apple signing credentials are configured in CI. macOS may therefore show the standard Gatekeeper warning for downloaded builds.
+Builds use ad-hoc signing unless `APPLE_SIGNING_IDENTITY` is configured. Packaging verifies the complete app signature; ad-hoc signing is not Developer ID signing or notarization, so downloaded builds may still show Gatekeeper warnings.
 
 ## Asset policy
 
@@ -149,4 +214,7 @@ This avoids committing full iOS/Android icon matrices or duplicate template artw
 
 ## License
 
-No open-source license has been selected yet.
+No project-wide open-source license has been selected yet. The recorder and
+renderer imported from canvas-cairo-pdf retain their MIT licenses in their
+module directories. Related OOXML adapter/build code retains the notice in
+`compat/ooxml/LICENSE`. Third-party dependencies retain their own licenses.
