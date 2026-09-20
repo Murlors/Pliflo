@@ -196,7 +196,7 @@ DESIGN.md            Visual direction and interaction notes
 
 ## Releases
 
-Tags matching `v*` trigger the GitHub Actions release workflow. Apple Silicon and Intel packages are built on separate native runners so each includes matching Cairo/Pango libraries. The workflow uploads architecture-specific app archives and DMGs. Validate both architectures and dependency licenses before tagging a release.
+Tags matching `v*` trigger the GitHub Actions release workflow. Apple Silicon and Intel packages are built on separate native runners so each includes matching Cairo/Pango libraries. The workflow uploads only architecture-specific DMGs; the app bundle remains a local build artifact. Validate both architectures and dependency licenses before tagging a release.
 
 Builds use ad-hoc signing unless `APPLE_SIGNING_IDENTITY` is configured. Packaging verifies the complete app signature; ad-hoc signing is not Developer ID signing or notarization, so downloaded builds may still show Gatekeeper warnings.
 

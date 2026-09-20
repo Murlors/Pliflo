@@ -112,6 +112,7 @@ Update the relevant document when behavior or architecture changes. Avoid duplic
 
 - Keep unrelated working-tree changes untouched.
 - Prefer focused commits and Chinese Conventional Commit messages that describe the actual diff.
+- Write public release titles, release notes and annotated tag messages in English. Commit messages remain Chinese Conventional Commits.
 - Use `bun run desktop:build` for packaging: it closes the native dylib dependency graph and derives the minimum macOS version from the executable and libraries. Do not impose a fixed-version packaging gate or require an override for newer local dependencies. Report the actual minimum OS without claiming unverified older-system compatibility. Bare `tauri build` does not include the native packaging step.
 - Tags matching `v*` trigger `.github/workflows/release.yml`, which builds separate Apple Silicon and Intel packages with matching native dependencies and publishes a GitHub Release.
 - Do not rewrite an already published release tag just to include later documentation changes. Use a new version/tag when a new release is intended.
