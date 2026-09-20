@@ -4,6 +4,8 @@ export const COPY = {
     cancelRequested: "Cancellation requested; waiting for system confirmation.",
     singleSided: "Single-sided",
     batchScope: "Changes apply to queued, failed and cancelled files, and new imports.",
+    batchScopeCompact: "For unsubmitted files and new imports",
+    scopeDetails: "Settings scope details",
     batchDefaultsHint:
       "Batch defaults shown here; review each file's actual settings before printing.",
     fileScope: "Applies only to the selected file.",
@@ -180,6 +182,8 @@ export const COPY = {
     cancelRequested: "已请求取消，正在等待系统确认。",
     singleSided: "单面",
     batchScope: "修改将应用到待打印、失败、已取消的文件及之后导入的文件。",
+    batchScopeCompact: "应用到未提交文件及新导入文件",
+    scopeDetails: "查看设置作用范围",
     batchDefaultsHint: "此处显示批次默认值，实际设置以逐文件核对清单为准。",
     fileScope: "仅修改当前选中的文件。",
     settingsLocked: "已提交的设置只读，重新入队后可修改。",

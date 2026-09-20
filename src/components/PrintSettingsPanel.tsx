@@ -9,6 +9,7 @@ import {
   RotateCcw,
   SlidersHorizontal,
   CircleAlert,
+  Info,
 } from "lucide-react";
 import type { COPY } from "../app/i18n";
 import type {
@@ -151,8 +152,18 @@ export function PrintSettingsPanel({
   const locked = queueRunning;
   const settingsLocked =
     locked || (!!selected && !["queued", "failed", "cancelled"].includes(selected.state));
-  const alerts = describeReasons(printerStatus?.reasons ?? [], labels);
-  if (printerStatus?.state === "stopped" && !alerts.includes(labels.printerStopped))
+  const printerOffline = printerStatus?.reasons.some(
+    (reason) => reason.replace(/-(report|warning|error)$/, "") === "offline",
+  );
+  // 离线时设备故障可能是缓存状态，恢复连接后再展示具体原因。
+  const alerts = printerOffline
+    ? [labels.offline]
+    : describeReasons(printerStatus?.reasons ?? [], labels);
+  if (
+    !printerOffline &&
+    printerStatus?.state === "stopped" &&
+    !alerts.includes(labels.printerStopped)
+  )
     alerts.push(labels.printerStopped);
   const detected =
     printers.find((printer) => printer.name === selectedPrinter)?.state === "detected";
@@ -216,18 +227,16 @@ export function PrintSettingsPanel({
 
       {(alerts.length > 0 || printerStatusUnavailable || printerStatus?.message) && (
         <div
-          className="printer-alert mx-3.25 mt-2 flex max-h-28 shrink-0 gap-2 overflow-auto p-2.5 text-xs"
+          className="printer-alert mx-3.75 mt-2 flex max-h-18 shrink-0 items-start gap-1.5 overflow-auto text-xs leading-relaxed"
           role="status"
+          aria-label={labels.printerAlerts}
         >
-          <CircleAlert size={15} className="shrink-0" />
+          <CircleAlert size={14} className="mt-0.5 shrink-0" />
           <div className="min-w-0 break-words">
-            <strong>{labels.printerAlerts}</strong>
-            {alerts.map((alert) => (
-              <p className="m-0 mt-1" key={alert}>
-                {alert}
-              </p>
-            ))}
-            {printerStatus?.message && <p className="m-0 mt-1">{printerStatus.message}</p>}
+            {alerts.length > 0 && <p className="m-0">{alerts.join(" · ")}</p>}
+            {!printerOffline && printerStatus?.message && (
+              <p className="m-0 mt-1">{printerStatus.message}</p>
+            )}
             {printerStatusUnavailable && <p className="m-0 mt-1">{labels.statusUnavailable}</p>}
           </div>
         </div>
@@ -251,19 +260,27 @@ export function PrintSettingsPanel({
           <FileText size={14} /> {labels.file}
         </button>
       </div>
-      <p className="scope-hint mx-3.75 my-2 text-xs leading-relaxed">
-        {settingsLocked && !locked
-          ? labels.settingsLocked
-          : selected
-            ? labels.fileScope
-            : labels.batchScope}
-        {selected && (
-          <strong className="block truncate" title={selected.name}>
-            {selected.name}
-          </strong>
-        )}
-        {!selected && <span className="block mt-1">{labels.batchDefaultsHint}</span>}
-      </p>
+      <div className="scope-hint mx-3.75 my-2 flex min-w-0 items-start gap-1.5 text-xs leading-relaxed">
+        <span className="min-w-0 flex-1 truncate" title={selected?.name}>
+          {settingsLocked && !locked
+            ? labels.settingsLocked
+            : selected
+              ? selected.name
+              : labels.batchScopeCompact}
+        </span>
+        <details className="scope-help relative shrink-0">
+          <summary
+            className="grid h-5 w-5 cursor-pointer place-items-center"
+            aria-label={labels.scopeDetails}
+          >
+            <Info size={13} />
+          </summary>
+          <div className="scope-help-content absolute right-0 top-6 z-10 w-60 p-3 text-xs leading-relaxed">
+            <p className="m-0">{selected ? labels.fileScope : labels.batchScope}</p>
+            {!selected && <p className="m-0 mt-1">{labels.batchDefaultsHint}</p>}
+          </div>
+        </details>
+      </div>
 
       <fieldset
         className="settings-scroll settings-fieldset m-0 min-h-0 flex-1 overflow-auto border-0 p-0"

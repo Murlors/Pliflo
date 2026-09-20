@@ -596,6 +596,16 @@ summary:focus-visible {
   background: #191d19;
 }
 
+.file-copy .job-state span {
+  color: inherit;
+}
+
+.job-state svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
 .state-completed {
   border-color: rgba(151, 179, 119, 0.22);
   background: #20281e;
@@ -1233,8 +1243,24 @@ summary:focus-visible {
 
 .printer-alert {
   color: var(--warning);
-  border: 1px solid currentColor;
+}
+
+.scope-help summary {
+  list-style: none;
+}
+.scope-help summary::-webkit-details-marker {
+  display: none;
+}
+.scope-help summary:focus-visible {
+  outline: 2px solid var(--warning);
+  outline-offset: 2px;
+}
+.scope-help-content {
+  color: var(--console-muted);
+  background: var(--console-2);
+  border: 1px solid var(--console-line);
   border-radius: 6px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 15%);
 }
 
 .scope-hint,

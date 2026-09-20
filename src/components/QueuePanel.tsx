@@ -165,7 +165,7 @@ export function QueuePanel({
                       : `${item.pages ? labels.pages(item.pages) : labels.pagesUnknown} · ${formatBytes(item.sizeBytes)}`}
                   </span>
                   <div
-                    className={`job-state flex self-start items-center gap-1 text-xs state-${item.state}`}
+                    className={`job-state inline-flex min-h-5 self-start items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] leading-none state-${item.state}`}
                   >
                     <StatusIcon state={item.state} />
                     <span>{item.preparing ? labels.preparing : stateLabel[item.state]}</span>
