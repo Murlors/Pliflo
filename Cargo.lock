@@ -2680,7 +2680,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "pliflo"
-version = "1.1.1"
+version = "1.2.0"
 dependencies = [
  "canvas-cairo-replay",
  "lopdf",
