@@ -47,6 +47,8 @@ commit private documents or generated PDFs. Use synthetic or authorized samples.
   uploading DMGs; never move a published tag to another commit.
 - Use `vp run desktop:build`, not bare `tauri build`, to package native libraries
   and notices. Local builds may require a newer macOS version than release builds.
+- The release workflow can also be dispatched manually on a branch to validate
+  both macOS architectures without uploading release assets or creating a tag.
 
 Project code uses [MIT](LICENSE); third-party notices remain in effect as described
 in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
