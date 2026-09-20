@@ -10,19 +10,6 @@ permissions:
   contents: write
 
 jobs:
-  font-diagnostics:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: macos-15
-    steps:
-      - name: Inspect native font files
-        run: |
-          brew install fontconfig
-          swift -e 'import Foundation; import CoreText; let font = CTFontCreateWithName("PingFang SC" as CFString, 12, nil); if let url = CTFontCopyAttribute(font, kCTFontURLAttribute) as? URL { print(url.path) }' > /tmp/pliflo-font-path
-          while IFS= read -r font; do
-            ls -l "$font"
-            fc-scan --format '%{family}\n%{postscriptname}\n' "$font"
-          done < /tmp/pliflo-font-path
-          swift -e 'import Foundation; import CoreText; for url in CTFontManagerCopyAvailableFontURLs() as! [URL] where url.path.contains("PingFang") { print(url.path) }'
   macos:
     name: Build macOS (${{ matrix.arch }})
     strategy:
