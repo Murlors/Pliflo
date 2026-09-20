@@ -210,6 +210,16 @@ mod tests {
                 let desc =
                     crate::text::parse_font(&format!("{prefix}12px {family}"), &BTreeMap::new())
                         .unwrap();
+                // 系统可列出尚未下载的字体；比较实际选字，而不是假设请求字体可用。
+                let system = FontResolver::layout(&resolver.system, &cr, &desc, sample, false);
+                let expected = system
+                    .iter()
+                    .run_readonly()
+                    .unwrap()
+                    .item()
+                    .analysis()
+                    .font()
+                    .describe();
                 let layout = resolver.resolve(&cr, &desc, sample, false).unwrap();
                 let actual = layout
                     .iter()
@@ -221,8 +231,8 @@ mod tests {
                     .describe();
                 assert_eq!(
                     actual.family().unwrap().as_str(),
-                    family,
-                    "{prefix}{sample}"
+                    expected.family().unwrap().as_str(),
+                    "{prefix}{family}: {sample}"
                 );
             }
         }
