@@ -1,15 +1,21 @@
 import { createServer } from "vite-plus";
-import { chromium } from "playwright-core";
+import { chromium, webkit } from "playwright-core";
 import { mkdtemp, readFile, writeFile, stat } from "node:fs/promises";
 import { resolve, join, basename } from "node:path";
 import { tmpdir } from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 
 // 执行真实的 Pliflo 文档代码与 Rust Cairo；只替换 IPC 传输，没有打印命令。
 const inputs = process.argv.slice(2).map((path) => resolve(path));
 if (!inputs.length) throw new Error("Usage: bun scripts/check-rendering.ts <document> [...]");
 const output = await mkdtemp(join(tmpdir(), "pliflo-cairo-check-"));
+const engine = process.env.PLIFLO_RENDER_BROWSER ?? "chromium";
+assert(["chromium", "webkit"].includes(engine), "Unsupported test browser");
+assert(
+  !(engine === "webkit" && process.env.PLIFLO_RENDER_PROFILE),
+  "CPU profiling requires Chromium",
+);
 const csp = JSON.parse(await readFile("src-tauri/tauri.conf.json", "utf8")).app.security.csp;
 const markdown = join(output, "mixed.md");
 await writeFile(
@@ -19,7 +25,7 @@ await writeFile(
 inputs.push(markdown);
 const server = await createServer({ server: { port: 0, strictPort: false, open: false } });
 await server.listen();
-const browser = await chromium.launch({ headless: true });
+const browser = await (engine === "webkit" ? webkit : chromium).launch({ headless: true });
 const watchdog = setTimeout(() => {
   void browser.close();
 }, 120_000);
@@ -40,7 +46,6 @@ try {
     options?: { headers: Record<string, string> },
   ) => {
     const values = args as Record<string, unknown>;
-    if (command === "read_local_file") return Array.from(await readFile(String(values.path)));
     if (command === "begin_printable_pdf") {
       active = await mkdtemp(join(output, "session-"));
       pages = [];
@@ -53,7 +58,7 @@ try {
       assert.equal(Number(options?.headers["x-pliflo-index"]), pages.length);
       const bytes = Buffer.from(args as Uint8Array);
       recordingBytes += bytes.length;
-      assert.equal(bytes.subarray(0, 4).toString(), "CCP1");
+      assert(["CCP1", "CCP2"].includes(bytes.subarray(0, 4).toString()));
       const jsonLength = bytes.readUInt32LE(4);
       const json = JSON.parse(bytes.subarray(8, 8 + jsonLength).toString());
       binaryImages += bytes.readUInt32LE(8 + jsonLength);
@@ -69,12 +74,16 @@ try {
         pdf = join(active, "printable.pdf");
       await writeFile(manifest, JSON.stringify({ pages }));
       const started = performance.now();
-      execFileSync(
+      const native = spawnSync(
         resolve(
           `src-tauri/target/debug/canvas-cairo-pdf${process.platform === "win32" ? ".exe" : ""}`,
         ),
         [manifest, pdf],
+        { encoding: "utf8", env: { ...process.env, PLIFLO_FONT_DIAGNOSTICS: "1" } },
       );
+      await writeFile(join(active, "fonts.txt"), native.stderr ?? "");
+      if (native.error) throw native.error;
+      assert.equal(native.status, 0, native.stderr);
       nativeMs += performance.now() - started;
       return pdf;
     }
@@ -84,6 +93,14 @@ try {
     throw new Error(`Unexpected IPC: ${command}`);
   };
   await page.exposeFunction("testInvoke", testInvoke);
+  await page.route("**/render-file", async (route) => {
+    const { path } = route.request().postDataJSON() as { path: string };
+    try {
+      await route.fulfill({ body: await readFile(path), contentType: "application/octet-stream" });
+    } catch (error) {
+      await route.fulfill({ status: 400, body: String(error) });
+    }
+  });
   // 页数据走原始字节，避免 Playwright 的逐元素序列化主导性能测量。
   await page.route("**/render-page", async (route) => {
     try {
@@ -102,6 +119,14 @@ try {
     };
     host.__TAURI_INTERNALS__ = {
       invoke: async (command: string, args: unknown, options: unknown) => {
+        if (command === "read_local_file") {
+          const response = await fetch("/render-file", {
+            method: "POST",
+            body: JSON.stringify(args),
+          });
+          if (!response.ok) throw new Error(await response.text());
+          return response.arrayBuffer();
+        }
         if (command === "append_vector_pdf_page" && args instanceof Uint8Array) {
           const response = await fetch("/render-page", {
             method: "POST",
@@ -155,10 +180,17 @@ try {
       recordingBytes,
       bytes: (await stat(result.printPath)).size,
       textCharacters: text.trim().length,
+      browser: engine,
     };
+    const pdfInfo = execFileSync("pdfinfo", [result.printPath], { encoding: "utf8" });
+    const pdfPages = Number(pdfInfo.match(/^Pages:\s+(\d+)/m)?.[1]);
+    if (result.generated)
+      assert.equal(pdfPages, result.pages, "PDF page count differs from preparation");
     if (!["image", "pdf"].includes(result.format))
       assert(text.trim().length > 0, "Missing searchable text");
     await writeFile(join(active, "extracted.txt"), text);
+    await writeFile(join(active, "report.json"), JSON.stringify(report, null, 2));
+    await writeFile(join(active, "pdfinfo.txt"), pdfInfo);
     console.log(JSON.stringify(report));
   }
   // 已取消的任务不得创建会话、读取文件或返回产物。
