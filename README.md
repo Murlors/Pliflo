@@ -192,7 +192,9 @@ Playwright WebKit is an additional browser check, not the packaged Tauri WKWebVi
 
 DOCX embedded OpenType fonts are transferred once per conversion as binary data.
 The renderer uses session-local font maps and FreeType PDF text output, with
-platform system-font fallback. No document fonts are installed globally. Native
+platform system-font fallback. System families unavailable to FreeType retain
+platform text rendering for that Canvas call; their PDF extraction limitations
+still apply. No document fonts are installed globally. Native
 Pango 1.56+ with FreeType/Fontconfig support is required. Test the document-font
 adapter with `vp test run src/lib/document-fonts.test.ts`.
 

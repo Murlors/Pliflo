@@ -65,7 +65,11 @@ The library returns font diagnostics and never writes document text to logs.
 System fonts are selected through the platform font map, then rendered through
 a private FreeType font map, preserving the selected family for each text run.
 This keeps platform fallback while avoiding CoreText PDF variable-font and
-ligature mapping differences. Text remains embedded text/vector content.
+ligature mapping differences for FreeType-compatible fonts. If a selected system
+family is unavailable to FreeType (for example, a macOS-only outline format), the
+whole Canvas text call retains platform shaping instead of silently substituting
+another family. Such calls retain platform PDF text-mapping limitations and need
+visual and extraction checks. Output is not converted into page images.
 Document fonts are loaded into this private map, using their OpenType family
 names and document aliases. Font files and caches live beside the output in a
 temporary directory and are removed when rendering ends. The macOS map uses

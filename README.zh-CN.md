@@ -107,7 +107,7 @@ PLIFLO_RENDER_BROWSER=webkit vp run test:rendering /absolute/path/report.docx
 
 每个渲染会话在 PDF 旁保存 `report.json`、`pdfinfo.txt`、`extracted.txt` 和 `fonts.txt`（请求字体与原生实际选字），并核对生成 PDF 的实际页数与准备结果。Playwright WebKit 是额外的浏览器检查，不等于打包后的 Tauri WKWebView。
 
-DOCX 内嵌 OpenType 字体在每次转换中仅以二进制传输一次。渲染器使用会话独立的字体映射和 FreeType PDF 文字输出，并保留系统字体回退选择，不会全局安装文档字体。需要带 FreeType/Fontconfig 支持的 Pango 1.56+。字体资源适配测试：`vp test run src/lib/document-fonts.test.ts`。
+DOCX 内嵌 OpenType 字体在每次转换中仅以二进制传输一次。渲染器使用会话独立的字体映射和 FreeType PDF 文字输出，并保留系统字体回退选择，不会全局安装文档字体。FreeType 无法使用的系统字体保留该次 Canvas 文字调用的原生排版，对应的 PDF 文本提取限制仍然适用。需要带 FreeType/Fontconfig 支持的 Pango 1.56+。字体资源适配测试：`vp test run src/lib/document-fonts.test.ts`。
 
 ## 构建与发布
 

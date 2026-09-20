@@ -160,6 +160,15 @@ impl FontResolver {
             if let Some(run) = iter.run_readonly() {
                 let item = run.item();
                 let actual = item.analysis().font().describe();
+                // 部分 macOS 系统字体使用 FreeType 不支持的轮廓格式。
+                // 原生 map 能绘制而 PDF map 无此字体时，保留整个文字调用的
+                // 系统排版，避免换成另一字体后破坏宽度及字形；内嵌字体仍走私有 map。
+                if actual
+                    .family()
+                    .is_some_and(|family| self.pdf.family(&family).is_none())
+                {
+                    return Ok(selection);
+                }
                 let mut chosen = desc.clone();
                 chosen.set_family(actual.family().as_deref().unwrap_or("sans-serif"));
                 let mut attr = AttrFontDesc::new(&chosen);
