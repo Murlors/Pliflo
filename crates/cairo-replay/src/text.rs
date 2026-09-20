@@ -30,20 +30,25 @@ pub(crate) fn parse_font(
         size.is_finite() && size > 0.0 && size <= 16_384.0,
         "Font size must be in (0,16384]"
     );
-    let family = after.trim_start().replace('"', "");
     let mut families = Vec::new();
-    for name in family.split(',').map(str::trim) {
+    for name in after.split(',').map(str::trim) {
+        let name = if name.starts_with(['\'', '"']) {
+            let quote = name.chars().next().unwrap();
+            ensure!(
+                name.len() >= 2 && name.ends_with(quote),
+                "Unclosed font family quote"
+            );
+            &name[1..name.len() - 1]
+        } else {
+            name
+        };
         ensure!(!name.is_empty(), "Empty font family");
         families.push(aliases.get(name).map(String::as_str).unwrap_or(name));
     }
     let mut desc = FontDescription::new();
-    // 未启用别名时必须保留原始逗号及空格；Pango/CoreText 的 fallback
-    // 对 family 列表的空白敏感，擅自规范化会改变实际字体和 PDF 字节数。
-    if aliases.is_empty() {
-        desc.set_family(&family);
-    } else {
-        desc.set_family(&families.join(","));
-    }
+    // CSS 允许逗号两侧空白，Pango/CoreText 却可能将其当作字体名的一部分，
+    // 导致 serif 回退失效。只规范化列表分隔符，保留字体名内部空格。
+    desc.set_family(&families.join(","));
     desc.set_absolute_size(size * f64::from(SCALE));
     let mut weight = Weight::Normal;
     let mut style = Style::Normal;
@@ -77,6 +82,7 @@ pub(crate) struct TextRenderer<'a> {
     pub aliases: &'a BTreeMap<String, String>,
     pub diagnostics: bool,
     pub seen: BTreeSet<FontDiagnostic>,
+    pub fonts: crate::fonts::FontResolver,
 }
 
 impl TextRenderer<'_> {
@@ -89,11 +95,10 @@ impl TextRenderer<'_> {
         mut y: f64,
     ) -> Result<()> {
         let desc = parse_font(&state.font, self.aliases)?;
-        let layout = pangocairo::functions::create_layout(cr);
+        let layout = self
+            .fonts
+            .resolve(cr, &desc, text, state.direction == "rtl")?;
         let context = layout.context();
-        context.set_round_glyph_positions(false);
-        layout.set_font_description(Some(&desc));
-        layout.set_text(text);
         if self.diagnostics {
             let mut iter = layout.iter();
             loop {
@@ -120,9 +125,15 @@ impl TextRenderer<'_> {
         match state.align.as_str() {
             "center" => x -= f64::from(width) / (2.0 * units),
             "right" => x -= f64::from(width) / units,
+            "start" if state.direction == "rtl" => x -= f64::from(width) / units,
+            "end" if state.direction != "rtl" => x -= f64::from(width) / units,
             _ => {}
         }
-        let metrics = context.metrics(Some(&desc), None);
+        let metrics = layout
+            .iter()
+            .run_readonly()
+            .map(|run| run.item().analysis().font().metrics(None))
+            .unwrap_or_else(|| context.metrics(Some(&desc), None));
         let ascent = f64::from(metrics.ascent()) / units;
         let descent = f64::from(metrics.descent()) / units;
         match state.baseline.as_str() {
@@ -165,8 +176,59 @@ mod tests {
         let fallback = parse_font("bold 14px Calibri, Arial, Helvetica", &BTreeMap::new()).unwrap();
         assert_eq!(
             fallback.family().unwrap().as_str(),
-            "Calibri, Arial, Helvetica"
+            "Calibri,Arial,Helvetica"
         );
+    }
+
+    #[test]
+    fn css_family_spacing_preserves_native_font_and_width() {
+        let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, 1, 1).unwrap();
+        let cr = Cairo::new(&surface).unwrap();
+        let layout = pangocairo::functions::create_layout(&cr);
+        layout.context().set_round_glyph_positions(false);
+        layout.set_text("2026年 example@domain.test，邮件");
+        for (style, fallback) in ["", "bold ", "italic ", "bold italic ", "650 "]
+            .into_iter()
+            .flat_map(|style| {
+                ["serif", "sans-serif", "monospace"].map(|fallback| (style, fallback))
+            })
+        {
+            let reference = parse_font(
+                &format!("{style}11px MissingPlifloTestFamily,{fallback}"),
+                &BTreeMap::new(),
+            )
+            .unwrap();
+            layout.set_font_description(Some(&reference));
+            let expected_size = layout.size();
+            let expected_font = layout
+                .iter()
+                .run_readonly()
+                .unwrap()
+                .item()
+                .analysis()
+                .font()
+                .describe();
+            for family in [
+                format!("MissingPlifloTestFamily, {fallback}"),
+                format!("'MissingPlifloTestFamily' , '{fallback}'"),
+                format!("\"MissingPlifloTestFamily\",   {fallback}"),
+            ] {
+                let desc = parse_font(&format!("{style}11px {family}"), &BTreeMap::new()).unwrap();
+                layout.set_font_description(Some(&desc));
+                assert_eq!(layout.size(), expected_size, "{style}{family}");
+                assert_eq!(
+                    layout
+                        .iter()
+                        .run_readonly()
+                        .unwrap()
+                        .item()
+                        .analysis()
+                        .font()
+                        .describe(),
+                    expected_font
+                );
+            }
+        }
     }
 
     #[test]
@@ -183,6 +245,8 @@ mod tests {
             "17000px serif",
             "12px serif,",
             "12px \0serif",
+            "12px \"\"",
+            "12px 'Unclosed",
         ] {
             assert!(parse_font(font, &BTreeMap::new()).is_err(), "{font:?}");
         }

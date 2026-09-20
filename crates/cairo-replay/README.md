@@ -6,7 +6,8 @@ it does not lay out Office documents or submit print jobs.
 
 ## Build and run
 
-Install Rust and native Cairo (with PDF/PNG support), Pango >= 1.44, and
+Install Rust and native Cairo (with PDF/PNG/FreeType support), Pango >= 1.56
+(including its FreeType/Fontconfig backend), and
 pkg-config. The locked gtk-rs 0.22 dependencies require Rust >= 1.92.
 
 ```sh
@@ -61,11 +62,27 @@ loss is outside this error-cleanup guarantee. Output is not atomically published
 callers must wait for successful return before consuming it.
 
 The library returns font diagnostics and never writes document text to logs.
+System fonts are selected through the platform font map, then rendered through
+a private FreeType font map, preserving the selected family for each text run.
+This keeps platform fallback while avoiding CoreText PDF variable-font and
+ligature mapping differences. Text remains embedded text/vector content.
+Document fonts are loaded into this private map, using their OpenType family
+names and document aliases. Font files and caches live beside the output in a
+temporary directory and are removed when rendering ends. The macOS map uses
+standard system/user font directories and self-contained synthetic-style rules;
+it does not require Homebrew's font configuration on the receiving machine.
+The macOS system font catalog is initialized once per process; restart after
+installing or removing system fonts. Embedded fonts remain private to each PDF.
+Browser/native metric equality and complete Office fidelity are not guaranteed;
+known text, actual selected fonts and visual output must all be checked.
 Options are explicit and do not read the process environment. The CLI supports:
 
 - `PLIFLO_FONT_ALIASES`: path to a JSON object mapping family names to nonempty
-  family names. With no aliases, the original family list spacing is retained:
-  normalizing commas/spaces can alter Pango/CoreText fallback selection.
+  family names. CSS family-list separators are normalized before calling Pango,
+  with or without aliases; surrounding single/double quotes are removed while
+  spaces within family names are preserved. This prevents separator whitespace
+  from breaking native fallback matching. Quoted names containing commas and
+  CSS escape sequences are not supported.
 - `PLIFLO_FONT_DIAGNOSTICS`: presence enables deduplicated
   `FONT requested => actual` stderr lines, without document text.
 
@@ -83,6 +100,13 @@ its own `size.widthPt`/`size.heightPt`; the scale is `widthPt / width`.
 
 Required recording fields: `version: 1`, `size`, `width`, `height`, `commands`,
 `unsupported: []`. Optional metadata: `index`, `sourcePages`, `reference`.
+Binary pages use CCP1 (JSON and PNG payloads) or CCP2 (the same layout followed
+by a font count and length-prefixed raw OpenType payloads). Integers are u32
+little-endian. CCP2 JSON includes `fonts: [{family, weight, style}]` in payload
+order; style is `normal` or `italic`. Font bytes cannot be supplied through JSON.
+Fonts remain available on subsequent pages of the same PDF. Send each face once;
+duplicate document family/style/weight bindings are rejected. Limits are 64
+faces and 64 MiB of font bytes per document, within the 256 MiB binary-page limit.
 Commands have `op`, fixed-arity `args`, and the recorder's complete `state`.
 `save`/`restore` permit omitted state. Unknown fields and operations are rejected;
 unsupported operations never silently disappear.
@@ -93,7 +117,8 @@ Supported operations: `save`, `restore`, `beginPath`, `closePath`, `rect`,
 
 Text retains px absolute sizing, numeric weights 1–1000, normal/bold/italic/
 oblique styles, family fallback, alphabetic/top/middle/bottom baselines, and
-left/start/right/center alignment. `maxWidth`, other baselines/alignments,
+left/start/end/right/center alignment. Optional `direction` is `ltr` (default)
+or `rtl`; it controls shaping and start/end alignment. `maxWidth`, other baselines,
 shadows, other composites, gradients and non-`#RRGGBB` drawing colors fail.
 Rect shortcuts and text preserve the current path; fill/clip/stroke preserve it
 too. Save/restore balance is checked per page, with a fresh context per page.
@@ -117,6 +142,9 @@ Tests cover strict protocol validation, Rust-constructed nonfinite values,
 stack balance, actual PDF page dimensions/text/images, all supported operations,
 working-directory manifest resolution, late-page cleanup, malformed PNGs,
 aliases/fallback diagnostics, no overwrite, symlinks and concurrent creators.
+Font tests cover binary truncation, same-name session isolation, cross-page
+reuse, Unicode extraction, and temporary-resource cleanup using original tiny
+test fonts. They do not require proprietary Office fonts.
 The PDF parser is a dev dependency only; production rendering uses Cairo/Pango.
 PDF verification should use known input text and page dimensions, with visual
 inspection where layout matters. Record the native library versions, installed

@@ -98,9 +98,16 @@ bunx --no-install playwright-core install chromium
 vp run test:rendering /absolute/path/report.docx /absolute/path/slides.pptx /absolute/path/workbook.xlsx
 # 可选：将 Chromium CPU 分析结果写入生成 PDF 所在目录
 PLIFLO_RENDER_PROFILE=1 vp run test:rendering /absolute/path/workbook.xlsx
+# 可选：WebKit 回归；CPU 分析仅支持 Chromium
+bunx --no-install playwright-core install webkit
+PLIFLO_RENDER_BROWSER=webkit vp run test:rendering /absolute/path/report.docx
 ```
 
 使用合成或已授权的本地样本，不提交私人文档。测试报告区分总耗时、原生进程耗时和记录数据量；它不能替代打包应用的 WKWebView 验证，也不是原生 Tauri IPC 性能基准。检查文本提取、页数和页面尺寸后，仍应查看实际 PDF。
+
+每个渲染会话在 PDF 旁保存 `report.json`、`pdfinfo.txt`、`extracted.txt` 和 `fonts.txt`（请求字体与原生实际选字），并核对生成 PDF 的实际页数与准备结果。Playwright WebKit 是额外的浏览器检查，不等于打包后的 Tauri WKWebView。
+
+DOCX 内嵌 OpenType 字体在每次转换中仅以二进制传输一次。渲染器使用会话独立的字体映射和 FreeType PDF 文字输出，并保留系统字体回退选择，不会全局安装文档字体。需要带 FreeType/Fontconfig 支持的 Pango 1.56+。字体资源适配测试：`vp test run src/lib/document-fonts.test.ts`。
 
 ## 构建与发布
 

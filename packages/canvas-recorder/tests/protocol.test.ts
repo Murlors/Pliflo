@@ -5,7 +5,9 @@ import {
   validatePageGeometry,
   type CanvasState,
   type CanvasOperation,
+  type CanvasCommand,
 } from "../src/protocol";
+import { TextRunRecorder } from "../src/text";
 
 function state(): CanvasState {
   return {
@@ -132,10 +134,51 @@ describe("Canvas wire commands", () => {
       { font: null },
       { composite: "unknown" },
       { lineCap: "unknown" },
+      { direction: "unknown" },
       { fill: { hidden: "paint" } },
     ]) {
       expect(() => validateCanvasState({ ...state(), ...delta })).toThrow();
     }
     expect(() => canvasCommand("save", [], { ...state(), alpha: NaN })).toThrow();
+  });
+});
+
+describe("Unicode grapheme recording", () => {
+  const text = (value: string, x: number, patch: Partial<CanvasState> = {}) =>
+    canvasCommand("fillText", [value, x, 10], { ...state(), ...patch });
+  it("keeps accents and ZWJ sequences intact without merging ordinary words", () => {
+    const recorder = new TextRunRecorder();
+    const commands: CanvasCommand[] = [];
+    recorder.append(commands, text("e", 0), 5);
+    recorder.append(commands, text("\u0301", 5), 0);
+    recorder.append(commands, text(" ", 5), 3);
+    recorder.append(commands, text("👩", 8), 10);
+    recorder.append(commands, text("\u200d", 18), 0);
+    recorder.append(commands, text("💻", 18), 10);
+    expect(commands.map((command) => command.args[0])).toEqual(["é", " ", "👩‍💻"]);
+    recorder.append(commands, text("f", 28), 5);
+    recorder.append(commands, text("fi", 33), 10);
+    expect(commands.slice(-2).map((command) => command.args[0])).toEqual(["f", "fi"]);
+  });
+  it("preserves positioned text, style changes, direction and intervening paint", () => {
+    for (const patch of [
+      { fill: "#ff0000" },
+      { font: "11px serif" },
+      { direction: "rtl" },
+      { align: "center" },
+    ] as Partial<CanvasState>[]) {
+      const commands: CanvasCommand[] = [];
+      const recorder = new TextRunRecorder();
+      recorder.append(commands, text("e", 0), 5);
+      recorder.append(commands, text("\u0301", 5, patch), 0);
+      expect(commands).toHaveLength(2);
+    }
+    const commands: CanvasCommand[] = [];
+    const recorder = new TextRunRecorder();
+    recorder.append(commands, text("e", 0), 5);
+    recorder.append(commands, text("\u0301", 6), 0);
+    recorder.append(commands, canvasCommand("fillRect", [0, 0, 1, 1], state()));
+    recorder.append(commands, text("\u0301", 6), 0);
+    expect(commands).toHaveLength(4);
   });
 });

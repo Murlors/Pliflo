@@ -13,11 +13,15 @@ path = "src/main.rs"
 anyhow = "1"
 base64 = "0.23"
 cairo-rs = { version = "0.22", default-features = false, features = ["pdf", "png"] }
-pango = { version = "0.22", features = ["v1_44"] }
+pango = { version = "0.22", features = ["v1_56"] }
 pangocairo = "0.22"
 serde.workspace = true
 serde_json.workspace = true
+tempfile = "3"
+ttf-parser = "0.25"
+
+[build-dependencies]
+pkg-config = "0.3"
 
 [dev-dependencies]
 lopdf.workspace = true
-tempfile = "3"

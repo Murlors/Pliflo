@@ -53,6 +53,54 @@ fn rejects(value: Value) {
 }
 
 #[test]
+fn embedded_font_survives_multiple_pages_and_pdf_text_mapping() {
+    let root = tempdir().unwrap();
+    let mut first = page(vec![command("fillText", json!(["A中", 20, 30]))]);
+    first["commands"][0]["state"]["font"] = json!("12px Document Fixture");
+    let second = first.clone();
+    first["fonts"] = json!([{"family":"Document Fixture","weight":400,"style":"normal"}]);
+    let json = serde_json::to_vec(&first).unwrap();
+    let font = include_bytes!("fixtures/font-a.ttf");
+    let mut bytes = b"CCP2".to_vec();
+    bytes.extend_from_slice(&(json.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&json);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&(font.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(font);
+    let first_path = root.path().join("first.ccp");
+    fs::write(&first_path, bytes).unwrap();
+    let second_path = root.path().join("second.json");
+    write_json(&second_path, &second);
+    let input = root.path().join("manifest.json");
+    write_json(&input, &json!({"pages":[first_path, second_path]}));
+    let output = root.path().join("embedded.pdf");
+    let report = render_file(
+        input,
+        &output,
+        &RenderOptions {
+            font_diagnostics: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(report.pages, 2);
+    assert!(report
+        .fonts
+        .iter()
+        .all(|font| font.actual.contains("Pliflo Fixture")));
+    let pdf = lopdf::Document::load(output).unwrap();
+    for index in [1, 2] {
+        assert!(pdf.extract_text(&[index]).unwrap().contains("A中"));
+    }
+    assert!(!fs::read_dir(root.path()).unwrap().any(|file| file
+        .unwrap()
+        .file_name()
+        .to_string_lossy()
+        .starts_with("fonts-")));
+}
+
+#[test]
 fn rejects_malformed_protocol_before_native_calls() {
     let valid = page(vec![command("fillRect", json!([0, 0, 20, 20]))]);
     for (key, value) in [

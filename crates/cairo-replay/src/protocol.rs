@@ -39,12 +39,45 @@ pub struct Recording {
     pub index: Option<u32>,
     pub source_pages: Option<u32>,
     pub reference: Option<String>,
+    #[serde(default)]
+    pub fonts: Vec<FontResource>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FontResource {
+    pub family: String,
+    pub weight: u16,
+    pub style: String,
+    #[serde(skip)]
+    pub bytes: Vec<u8>,
 }
 
 impl Recording {
     /// 包括通过 Rust 直接构造的值在内，所有入口都必须经过验证。
     pub fn validate(&self) -> Result<()> {
         ensure!(self.version == 1, "Only recording version 1 is supported");
+        ensure!(self.fonts.len() <= 64, "Too many embedded fonts");
+        ensure!(
+            self.fonts
+                .iter()
+                .map(|font| font.bytes.len())
+                .sum::<usize>()
+                <= 64 * 1024 * 1024,
+            "Embedded fonts too large"
+        );
+        for font in &self.fonts {
+            ensure!(
+                !font.family.trim().is_empty() && !font.family.contains(['\0', ',']),
+                "Invalid embedded font family"
+            );
+            ensure!(
+                (1..=1000).contains(&font.weight)
+                    && ["normal", "italic"].contains(&font.style.as_str()),
+                "Invalid embedded font style"
+            );
+            ensure!(!font.bytes.is_empty(), "Missing embedded font bytes");
+        }
         ensure!(
             self.unsupported.is_empty(),
             "Recording contains unsupported operations"
@@ -155,11 +188,16 @@ pub struct State {
     pub font: String,
     pub baseline: String,
     pub align: String,
+    #[serde(default = "default_direction")]
+    pub direction: String,
     pub composite: String,
     pub shadow_blur: f64,
     pub shadow_offset_x: f64,
     pub shadow_offset_y: f64,
     pub shadow_color: String,
+}
+fn default_direction() -> String {
+    "ltr".into()
 }
 
 impl State {
@@ -196,6 +234,10 @@ impl State {
             positive(self.dash.iter().sum(), "dash total")?;
         }
         ensure!(self.composite == "source-over", "Composite unsupported");
+        ensure!(
+            ["ltr", "rtl"].contains(&self.direction.as_str()),
+            "Unsupported text direction"
+        );
         ensure!(
             self.shadow_blur == 0.0 && self.shadow_offset_x == 0.0 && self.shadow_offset_y == 0.0,
             "Shadow unsupported"
@@ -335,7 +377,7 @@ impl Command {
                     "Unsupported text baseline"
                 );
                 ensure!(
-                    ["left", "start", "right", "center"].contains(&state.align.as_str()),
+                    ["left", "start", "end", "right", "center"].contains(&state.align.as_str()),
                     "Unsupported text alignment"
                 );
                 crate::text::parse_font(&state.font, &Default::default())?;

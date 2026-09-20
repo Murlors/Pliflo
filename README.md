@@ -175,6 +175,9 @@ brew install poppler
 vp run test:rendering /absolute/path/report.docx /absolute/path/slides.pptx /absolute/path/workbook.xlsx
 # Optional Chromium CPU profiles, saved beside the generated PDFs:
 PLIFLO_RENDER_PROFILE=1 vp run test:rendering /absolute/path/workbook.xlsx
+# Optional WebKit regression (CPU profiling is Chromium-only):
+bunx --no-install playwright-core install webkit
+PLIFLO_RENDER_BROWSER=webkit vp run test:rendering /absolute/path/report.docx
 ```
 
 The test transport sends page buffers as raw HTTP bodies intercepted by Playwright,
@@ -182,6 +185,16 @@ not arrays serialized through browser bindings. Reports separate renderer proces
 time (`nativeMs`) and recording payload size (`recordingBytes`) from total elapsed
 time. These are local regression measurements, not packaged-app startup or native
 Tauri IPC benchmarks; CPU profiling also adds measurement overhead.
+Each render session saves `report.json`, `pdfinfo.txt`, `extracted.txt` and
+`fonts.txt` (requested and resolved native fonts) beside the PDF. Generated PDF
+page counts are checked against preparation results.
+Playwright WebKit is an additional browser check, not the packaged Tauri WKWebView.
+
+DOCX embedded OpenType fonts are transferred once per conversion as binary data.
+The renderer uses session-local font maps and FreeType PDF text output, with
+platform system-font fallback. No document fonts are installed globally. Native
+Pango 1.56+ with FreeType/Fontconfig support is required. Test the document-font
+adapter with `vp test run src/lib/document-fonts.test.ts`.
 
 The browser regression runs the actual preparation code with an IPC test transport and the Rust renderer; it does not replace a packaged WKWebView smoke test. The Bun and Cargo workspaces share root lockfiles; protocol changes are checked with both producer and renderer tests. OOXML and format-specific layout are application dependencies, not recorder dependencies. Native binary redistribution also requires the bundled libraries' license notices and source-access obligations; the current packaging manifest is an inventory, not a completed license audit.
 

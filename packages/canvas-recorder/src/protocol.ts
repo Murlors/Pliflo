@@ -24,6 +24,7 @@ export interface CanvasState {
   font: string;
   baseline: CanvasTextBaseline;
   align: CanvasTextAlign;
+  direction?: "ltr" | "rtl";
   composite: GlobalCompositeOperation;
   shadowBlur: number;
   shadowOffsetX: number;
@@ -63,6 +64,13 @@ export interface CanvasRecording {
   commands: CanvasCommand[];
   unsupported: string[];
 }
+/** 文档级字体只在首个页面发送；数据必须已经解除 OOXML 字体混淆。 */
+export interface FontResource {
+  family: string;
+  weight: number;
+  style: "normal" | "italic";
+  bytes: Uint8Array;
+}
 export interface PageRecording extends CanvasRecording {
   version: 1;
   index: number;
@@ -88,6 +96,8 @@ const fillRule = (value: unknown): boolean => value === "nonzero" || value === "
 /** 状态也参与 JSON 传输，拒绝 NaN/Infinity 变成 null 或遗漏必要字段。 */
 export function validateCanvasState(value: unknown): asserts value is CanvasState {
   const state = object(value, "Canvas state");
+  if (state.direction !== undefined && state.direction !== "ltr" && state.direction !== "rtl")
+    throw new Error("Invalid Canvas text direction");
   if (
     !Array.isArray(state.matrix) ||
     state.matrix.length !== 6 ||

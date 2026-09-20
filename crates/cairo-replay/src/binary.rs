@@ -3,7 +3,8 @@ use anyhow::{ensure, Context, Result};
 
 /// 解码逐页二进制 IPC；JSON 格式继续供 CLI 和已有诊断使用。
 pub fn decode_recording(bytes: &[u8]) -> Result<Recording> {
-    if !bytes.starts_with(b"CCP1") {
+    let with_fonts = bytes.starts_with(b"CCP2");
+    if !bytes.starts_with(b"CCP1") && !with_fonts {
         return serde_json::from_slice(bytes).context("Invalid recording JSON");
     }
     ensure!(bytes.len() <= 256 * 1024 * 1024, "Recording too large");
@@ -25,6 +26,20 @@ pub fn decode_recording(bytes: &[u8]) -> Result<Recording> {
     for _ in 0..count {
         let length = number(&mut rest)?;
         images.push(Some(take(&mut rest, length)?));
+    }
+    if with_fonts {
+        let count = number(&mut rest)?;
+        ensure!(
+            count == page.fonts.len() && count <= 64,
+            "Invalid font payload count"
+        );
+        let mut total = 0usize;
+        for font in &mut page.fonts {
+            let length = number(&mut rest)?;
+            total += length;
+            ensure!(total <= 64 * 1024 * 1024, "Embedded fonts too large");
+            font.bytes = take(&mut rest, length)?.to_vec();
+        }
     }
     ensure!(rest.is_empty(), "Trailing recording data");
     for command in &mut page.commands {
@@ -50,6 +65,32 @@ pub fn decode_recording(bytes: &[u8]) -> Result<Recording> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn font_payloads_are_bounded_and_required() {
+        let json = br#"{"version":1,"size":{"widthPt":100,"heightPt":100},"width":100,"height":100,"commands":[],"unsupported":[],"fonts":[{"family":"Fixture","weight":400,"style":"normal"}]}"#;
+        let font = include_bytes!("../tests/fixtures/font-a.ttf");
+        let mut wire = b"CCP2".to_vec();
+        wire.extend_from_slice(&(json.len() as u32).to_le_bytes());
+        wire.extend_from_slice(json);
+        wire.extend_from_slice(&0u32.to_le_bytes());
+        wire.extend_from_slice(&1u32.to_le_bytes());
+        wire.extend_from_slice(&(font.len() as u32).to_le_bytes());
+        let payload = wire.len();
+        wire.extend_from_slice(font);
+        assert_eq!(decode_recording(&wire).unwrap().fonts[0].bytes, font);
+        for end in 4..wire.len() {
+            assert!(
+                decode_recording(&wire[..end]).is_err(),
+                "accepted truncation {end}"
+            );
+        }
+        wire[payload - 4..payload].copy_from_slice(&(65u32 * 1024 * 1024).to_le_bytes());
+        assert!(decode_recording(&wire).is_err());
+        wire[payload - 4..payload].copy_from_slice(&(font.len() as u32).to_le_bytes());
+        wire[payload - 8..payload - 4].copy_from_slice(&0u32.to_le_bytes());
+        assert!(decode_recording(&wire).is_err());
+        assert!(decode_recording(json).unwrap().validate().is_err());
+    }
     #[test]
     fn binary_boundaries_and_cancellation() {
         let json = br#"{"version":1,"size":{"widthPt":100,"heightPt":100},"width":200,"height":200,"commands":[],"unsupported":[]}"#;

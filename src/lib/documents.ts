@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createRecordedCanvas, recordingPage } from "./cairo";
+import { documentFonts } from "./document-fonts";
+import type { FontResource } from "@pliflo/canvas-recorder/protocol";
 import type { DocumentFormat, DocumentInfo, DocumentRenderOptions } from "../app/types";
 
 const A4 = { widthPt: 595.28, heightPt: 841.89 };
@@ -43,9 +45,10 @@ async function canvasToPage(
   canvas: HTMLCanvasElement,
   pageWidthPt: number,
   pageHeightPt: number,
+  fonts: readonly FontResource[] = [],
 ): Promise<RenderedPage> {
   return {
-    bytes: await recordingPage(canvas, pageWidthPt, pageHeightPt),
+    bytes: await recordingPage(canvas, pageWidthPt, pageHeightPt, fonts),
   };
 }
 
@@ -439,11 +442,16 @@ async function renderDocx(path: string, onPage: PageSink) {
   });
   try {
     await doc.waitUntilLayoutComplete();
+    const fonts = await documentFonts(doc.document.embeddedFonts ?? [], (part) =>
+      doc.getFontBytes(part),
+    );
     for (let index = 0; index < doc.pageCount; index += 1) {
       const size = doc.pageSize(index);
       const canvas = createRecordedCanvas();
       await doc.renderPage(canvas, index, { width: Math.round(size.widthPt * 2), dpr: 1 });
-      await onPage(await canvasToPage(canvas, size.widthPt, size.heightPt));
+      await onPage(
+        await canvasToPage(canvas, size.widthPt, size.heightPt, index === 0 ? fonts : []),
+      );
     }
   } finally {
     doc.destroy();

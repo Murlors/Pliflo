@@ -3,6 +3,9 @@
 mod binary;
 pub mod protocol;
 pub use binary::decode_recording;
+#[cfg(target_os = "macos")]
+mod fontconfig;
+mod fonts;
 mod render;
 mod text;
 
@@ -103,7 +106,16 @@ pub fn render_input_cancellable(
         .create_new(true)
         .open(output)
         .with_context(|| format!("Output must be a new PDF path: {}", output.display()))?;
-    let result = render_pages(pages, file, options, cancelled);
+    let result = render_pages(
+        pages,
+        file,
+        output
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or(Path::new(".")),
+        options,
+        cancelled,
+    );
     if let Err(error) = result {
         // render_pages 的 Cairo 和文件句柄已释放，Windows 上也可以删除。
         if let Err(cleanup) = fs::remove_file(output) {
@@ -120,6 +132,7 @@ pub fn render_input_cancellable(
 fn render_pages(
     pages: Vec<Page>,
     file: File,
+    root: &Path,
     options: &RenderOptions,
     cancelled: impl Fn() -> bool,
 ) -> Result<RenderReport> {
@@ -127,6 +140,7 @@ fn render_pages(
         aliases: &options.font_aliases,
         diagnostics: options.font_diagnostics,
         seen: Default::default(),
+        fonts: fonts::FontResolver::new(root)?,
     };
     // 首次 show_page 之前设置真实尺寸，不产生占位页。
     let surface = PdfSurface::for_stream(1.0, 1.0, file)?;
@@ -142,6 +156,8 @@ fn render_pages(
                     decode_recording(&bytes)?
                 }
             };
+            recording.validate()?;
+            text.fonts.add(&recording.fonts)?;
             render::page(&surface, &recording, &mut text)
         })();
         result.with_context(|| format!("page {index}"))?;

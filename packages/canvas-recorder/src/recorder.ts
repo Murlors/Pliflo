@@ -3,7 +3,9 @@ import {
   type CanvasRecording,
   type CanvasState,
   type CanvasOperation,
+  type FontResource,
 } from "./protocol";
+import { TextRunRecorder } from "./text";
 
 const recordings = new WeakMap<HTMLCanvasElement, CanvasRecording>();
 const binaryImages = new WeakMap<HTMLCanvasElement, Promise<Blob>[]>();
@@ -55,6 +57,7 @@ export function recordCanvas(canvas: HTMLCanvasElement): CanvasRecording {
   const ctx = context(canvas);
   const recording: CanvasRecording = { commands: [], unsupported: [] };
   const images: Promise<Blob>[] = [];
+  const textRuns = new TextRunRecorder();
   binaryImages.set(canvas, images);
   const state = (): CanvasState => {
     const { a, b, c, d, e, f } = ctx.getTransform();
@@ -72,6 +75,12 @@ export function recordCanvas(canvas: HTMLCanvasElement): CanvasRecording {
       font: ctx.font,
       baseline: ctx.textBaseline,
       align: ctx.textAlign,
+      direction:
+        ctx.direction === "inherit"
+          ? getComputedStyle(canvas).direction === "rtl"
+            ? "rtl"
+            : "ltr"
+          : ctx.direction,
       composite: ctx.globalCompositeOperation,
       shadowBlur: ctx.shadowBlur,
       shadowOffsetX: ctx.shadowOffsetX,
@@ -111,7 +120,12 @@ export function recordCanvas(canvas: HTMLCanvasElement): CanvasRecording {
         }
         if (serial.some((value) => value instanceof Path2D)) recording.unsupported.push("Path2D");
         const wireArgs = serial.map((value) => (value instanceof Path2D ? {} : value));
-        recording.commands.push(canvasCommand(name, wireArgs, saved));
+        const command = canvasCommand(name, wireArgs, saved);
+        textRuns.append(
+          recording.commands,
+          command,
+          command.op === "fillText" ? ctx.measureText(command.args[0]).width : undefined,
+        );
         Reflect.apply(original, ctx, args);
       },
     });
@@ -125,6 +139,7 @@ export async function encodePage(
   canvas: HTMLCanvasElement,
   widthPt: number,
   heightPt: number,
+  fonts: readonly FontResource[] = [],
 ): Promise<Uint8Array> {
   const recording = recordings.get(canvas);
   if (!recording || !binaryImages.has(canvas)) throw new Error("Canvas was not recorded");
@@ -135,6 +150,9 @@ export async function encodePage(
       width: canvas.width,
       height: canvas.height,
       ...recording,
+      ...(fonts.length
+        ? { fonts: fonts.map(({ family, weight, style }) => ({ family, weight, style })) }
+        : {}),
     }),
   );
   const images = await Promise.all(binaryImages.get(canvas)!);
@@ -144,7 +162,22 @@ export async function encodePage(
     new DataView(bytes.buffer).setUint32(0, value, true);
     return bytes;
   };
-  parts.push(new TextEncoder().encode("CCP1"), integer(json.length), json, integer(images.length));
+  parts.push(
+    new TextEncoder().encode(fonts.length ? "CCP2" : "CCP1"),
+    integer(json.length),
+    json,
+    integer(images.length),
+  );
   for (const image of images) parts.push(integer(image.size), image);
+  if (fonts.length) {
+    if (
+      fonts.length > 64 ||
+      fonts.reduce((sum, font) => sum + font.bytes.byteLength, 0) > 64 * 1024 * 1024
+    )
+      throw new Error("Embedded fonts exceed document resource limits");
+    parts.push(integer(fonts.length));
+    for (const font of fonts)
+      parts.push(integer(font.bytes.byteLength), new Uint8Array(font.bytes).buffer);
+  }
   return new Uint8Array(await new Blob(parts).arrayBuffer());
 }

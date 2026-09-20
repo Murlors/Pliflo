@@ -1,12 +1,19 @@
 # Canvas recorder
 
 `@pliflo/canvas-recorder` is a private Bun workspace package with no runtime
-dependencies. It records Canvas 2D operations and encodes CCP1 pages, including
-binary PNG assets, for `crates/cairo-replay`.
+dependencies. It records Canvas 2D operations and encodes CCP1 pages with binary
+PNG assets, or CCP2 pages with additional binary font resources, for
+`crates/cairo-replay`.
 
 Import it in the WebView, create a document-owned canvas, call
 `recordCanvas(canvas)`, draw using the normal Canvas API, then await
-`encodePage(canvas, widthPt, heightPt)`. Images always use binary PNG assets.
+`encodePage(canvas, widthPt, heightPt, fonts?)`. Images always use binary PNG assets.
+Optional fonts are `{ family, weight, style, bytes }`; send each document face
+once, before pages that use it. The host extracts/deobfuscates document fonts.
+The recorder captures resolved text direction and joins adjacent, identically
+styled draw calls only when their positions are contiguous and their boundary
+splits a Unicode grapheme. Ordinary text, positioned spacing, and intervening
+drawing operations remain separate.
 Pliflo's `src/lib/cairo.ts` owns canvas cleanup.
 
 The package does not parse documents, resolve source paths, invoke Tauri or
