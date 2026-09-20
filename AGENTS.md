@@ -82,19 +82,21 @@ src-tauri/
 
 ## Verification
 
+Prefer `vp run <task>` for project scripts in `package.json`, including desktop tasks. If `vp` is unavailable on PATH, use `bun x --no-install vp run <task>`. Keep Bun for dependency installation and script runtime; do not bypass the native packaging script.
+
 For routine frontend/documentation changes, use the smallest relevant checks. Before a release or after native printing changes, use the broader set.
 
 ```bash
-bun run check
-bun run build
-cargo check --manifest-path src-tauri/Cargo.toml
+vp run check
+vp run build
+vp run check:native
 git diff --check
 ```
 
 For desktop packaging when needed:
 
 ```bash
-bun run desktop:build
+vp run desktop:build
 ```
 
 Do not use the print button or invoke the submission command as a smoke test. Verify printer discovery, capability mapping, UI state and build output without creating real jobs unless explicit authorization is present.
@@ -102,17 +104,21 @@ Do not use the print button or invoke the submission command as a smoke test. Ve
 ## Documentation responsibilities
 
 - `README.md`: public project overview, setup, commands, structure, release and platform status.
+- `README.zh-CN.md`: Chinese public guide; keep setup, commands, platform support and limitations aligned with the English README.
+- `CONTRIBUTING.md`: contributor workflow, local checks and release procedure.
+- `LICENSE` / `THIRD_PARTY_NOTICES.md`: project MIT license and third-party attribution; preserve module-level copyright notices and include project notices in packaged apps.
 - `PRODUCT.md`: durable product scope, users, behavior and product constraints.
 - `DESIGN.md`: visual system, interaction principles and design implementation boundaries.
 - `AGENTS.md`: repository operating rules for future agents and maintainers.
 
-Update the relevant document when behavior or architecture changes. Avoid duplicating detailed implementation notes across all four files.
+Update the relevant documents when behavior or architecture changes. Keep agent guidance in English and link to detailed documentation rather than duplicating it.
 
 ## Commits and releases
 
 - Keep unrelated working-tree changes untouched.
 - Prefer focused commits and Chinese Conventional Commit messages that describe the actual diff.
 - Write public release titles, release notes and annotated tag messages in English. Commit messages remain Chinese Conventional Commits.
-- Use `bun run desktop:build` for packaging: it closes the native dylib dependency graph and derives the minimum macOS version from the executable and libraries. Do not impose a fixed-version packaging gate or require an override for newer local dependencies. Report the actual minimum OS without claiming unverified older-system compatibility. Bare `tauri build` does not include the native packaging step.
+- Use `vp run desktop:build` for packaging: it closes the native dylib dependency graph and derives the minimum macOS version from the executable and libraries. Do not impose a fixed-version packaging gate or require an override for newer local dependencies. Report the actual minimum OS without claiming unverified older-system compatibility. Bare `tauri build` does not include the native packaging step.
 - Tags matching `v*` trigger `.github/workflows/release.yml`, which builds separate Apple Silicon and Intel packages with matching native dependencies and publishes a GitHub Release.
+- Keep automatic CI limited to release builds. Run routine checks locally; do not add branch/PR check workflows or background cache-warming jobs without an explicit request.
 - Do not rewrite an already published release tag just to include later documentation changes. Use a new version/tag when a new release is intended.

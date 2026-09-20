@@ -2,6 +2,7 @@
   "name": "pliflo",
   "version": "1.2.0",
   "private": true,
+  "license": "MIT",
   "workspaces": [
     "packages/*"
   ],
@@ -10,6 +11,9 @@
     "dev": "vp dev",
     "build": "vp build",
     "check": "vp check",
+    "check:native": "cargo check --workspace --locked",
+    "test:native": "cargo test --workspace --locked",
+    "fmt:native": "cargo fmt --all -- --check",
     "test:protocol": "vp test run packages/canvas-recorder/tests",
     "lint": "vp lint",
     "preview": "vp preview",

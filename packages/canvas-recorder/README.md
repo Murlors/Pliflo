@@ -14,8 +14,8 @@ manage print sessions. OOXML layout and worksheet geometry belong to the
 application. Unsupported drawing must remain observable at recording/replay
 validation boundaries.
 
-Run `bun run test:protocol` from the repository root. Run
-`bun run test:rendering <document> [...]` for the actual browser-to-Rust path.
+Run `vp run test:protocol` from the repository root. Run
+`vp run test:rendering <document> [...]` for the actual browser-to-Rust path.
 Protocol changes must be verified against the Rust workspace tests as well.
 
 The imported recorder and protocol retain the accompanying MIT license.

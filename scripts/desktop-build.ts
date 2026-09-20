@@ -127,6 +127,8 @@ try {
     }
   }
   for (const [name, source] of Object.entries({
+    pliflo: "LICENSE",
+    "pliflo-third-party": "THIRD_PARTY_NOTICES.md",
     "canvas-recorder": "packages/canvas-recorder/LICENSE",
     "cairo-replay": "crates/cairo-replay/LICENSE",
     ooxml: "node_modules/@silurus/ooxml/LICENSE",

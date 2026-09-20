@@ -4,6 +4,7 @@ version = "1.2.0"
 description = "A focused local document batch printing desktop app"
 authors = ["Pliflo"]
 edition = "2021"
+license = "MIT"
 
 [lib]
 name = "pliflo_lib"

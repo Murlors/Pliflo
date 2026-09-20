@@ -1,5 +1,7 @@
 # Pliflo
 
+English | [简体中文](README.zh-CN.md)
+
 <p align="center">
   <img src="src-tauri/icons/pliflo.svg" width="112" alt="Pliflo icon" />
 </p>
@@ -11,6 +13,18 @@
 Pliflo is a local-first document batch printing app built with **Tauri 2 + React + TypeScript + Vite+**. It is designed for people who regularly print groups of PDFs, Office documents, Markdown files and images and want a faster workflow than opening and configuring every document one by one.
 
 The first release targets **macOS**. The architecture keeps Windows support in mind, but Windows printing behavior has not been validated yet.
+
+## Download and install
+
+Download a DMG from [GitHub Releases](https://github.com/Murlors/Pliflo/releases):
+
+- Apple Silicon: choose `aarch64.dmg`.
+- Intel: choose `x64.dmg`.
+
+Open the DMG and drag Pliflo into Applications. Configure your printer in macOS
+before using the app. The v1.2.0 release packages declare macOS 15.0 as their
+minimum version; consult each release for its actual requirement. Builds are
+ad-hoc signed and not notarized unless release signing is configured.
 
 ## What Pliflo does
 
@@ -115,29 +129,33 @@ Requirements:
 Install dependencies:
 
 ```bash
-bun install
+bun install --frozen-lockfile
 ```
+
+Use `vp run <task>` for the scripts in `package.json`, including desktop packaging.
+If `vp` is not on PATH, use `bun x --no-install vp run <task>` with the installed
+project version. Bun remains the package manager and runtime for build scripts.
 
 Run the desktop app:
 
 ```bash
-bun run desktop:dev
+vp run desktop:dev
 ```
 
 Run frontend checks and build:
 
 ```bash
-vp check
-vp build
+vp run check
+vp run build
 ```
 
 Build the macOS application and DMG:
 
 ```bash
-bun run desktop:build
+vp run desktop:build
 ```
 
-Use `bun run desktop:build --app-only` for a local `.app`, or `bun run desktop:build` for an app and DMG. The build script collects native dynamic libraries, strips local symbols from copies, rewrites their paths into the app's Frameworks directory and derives the minimum macOS version from the executable and libraries. Newer dependencies do not block packaging; the resulting app advertises their actual system requirement.
+Use `vp run desktop:build --app-only` for a local `.app`, or `vp run desktop:build` for an app and DMG. The build script collects native dynamic libraries, strips local symbols from copies, rewrites their paths into the app's Frameworks directory and derives the minimum macOS version from the executable and libraries. Newer dependencies do not block packaging; the resulting app advertises their actual system requirement.
 
 The dependency/size inventory is written to `src-tauri/target/native-bundle-manifest.json`; temporary packaging copies are removed after restoring the original executable. Native license notices, Homebrew source inventories and build recipes are included under the app's `Contents/Resources/third-party` directory. Bun/Node are build tools, not bundled runtimes. Use this command rather than bare `tauri build` to include the native libraries.
 
@@ -147,13 +165,16 @@ The rendering command builds only the workspace renderer CLI, without compiling
 the desktop shell. It requires Chromium and Poppler as shown below.
 
 ```bash
-bun run test:protocol
-cargo test --workspace --locked
+vp run test:protocol
+vp run check:native
+vp run test:native
+vp run fmt:native
 bunx --no-install playwright-core install chromium
-# Requires Poppler; use synthetic or locally authorized documents.
-bun run test:rendering /absolute/path/report.docx /absolute/path/slides.pptx /absolute/path/workbook.xlsx
+brew install poppler
+# Use synthetic or locally authorized documents.
+vp run test:rendering /absolute/path/report.docx /absolute/path/slides.pptx /absolute/path/workbook.xlsx
 # Optional Chromium CPU profiles, saved beside the generated PDFs:
-PLIFLO_RENDER_PROFILE=1 bun run test:rendering /absolute/path/workbook.xlsx
+PLIFLO_RENDER_PROFILE=1 vp run test:rendering /absolute/path/workbook.xlsx
 ```
 
 The test transport sends page buffers as raw HTTP bodies intercepted by Playwright,
@@ -189,14 +210,25 @@ DESIGN.md            Visual direction and interaction notes
 
 ## Documentation
 
-- `README.md` is the public entry point for setup, architecture, platform status and releases.
-- `PRODUCT.md` records durable product scope, behavior and constraints.
-- `DESIGN.md` records the visual system and interaction rules.
-- `AGENTS.md` records repository-level maintenance rules, including print safety, architecture boundaries, styling ownership and verification expectations.
+- [简体中文](README.zh-CN.md): Chinese setup and usage guide.
+- [Contributing](CONTRIBUTING.md): local checks, change scope and releases.
+- [Product](PRODUCT.md): product scope, behavior and constraints.
+- [Design](DESIGN.md): visual system and interaction rules.
+- [Agent guide](AGENTS.md): repository maintenance rules and safety boundaries.
+- [Canvas recorder](packages/canvas-recorder/README.md) and [Rust renderer](crates/cairo-replay/README.md): module responsibilities, APIs and supported operations.
+- [OOXML adapter](compat/ooxml/README.md): version-specific worksheet geometry.
+- [Third-party notices](THIRD_PARTY_NOTICES.md): dependency attribution and packaging materials.
 
 ## Releases
 
 Tags matching `v*` trigger the GitHub Actions release workflow. Apple Silicon and Intel packages are built on separate native runners so each includes matching Cairo/Pango libraries. The workflow uploads only architecture-specific DMGs; the app bundle remains a local build artifact. Validate both architectures and dependency licenses before tagging a release.
+
+Only tag-triggered release CI runs automatically; ordinary branch pushes and pull
+requests do not start CI. Run the development checks locally before publishing.
+Release jobs retain frontend checks, protocol tests and signature verification,
+and build and test native code with the release profile before uploading. They
+do not restore or save Rust build caches; there is no background cache-warming
+workflow.
 
 Builds use ad-hoc signing unless `APPLE_SIGNING_IDENTITY` is configured. Packaging verifies the complete app signature; ad-hoc signing is not Developer ID signing or notarization, so downloaded builds may still show Gatekeeper warnings.
 
@@ -206,6 +238,17 @@ Pliflo keeps only assets that are used by the desktop build or act as a regenera
 
 This avoids committing full iOS/Android icon matrices or duplicate template artwork to a desktop-only repository.
 
+## Troubleshooting
+
+| Symptom                                                       | What to check                                                                                                                                                                            |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser-only preview cannot open files or discover printers   | Use `vp run desktop:dev`; `vp run dev` starts only the frontend and does not provide Tauri IPC.                                                                                          |
+| Native build cannot find Cairo/Pango                          | Install `pkgconf`, `cairo` and `pango`; ensure the matching Homebrew installation is on PATH for the target architecture.                                                                |
+| Office layout or CJK text differs from the source application | Check installed fonts and the generated PDF. Fonts are not bundled; fallback can change layout. Word/WPS/Excel pixel parity is not guaranteed.                                           |
+| Unsupported drawing error                                     | The Canvas subset is deliberately validated. Report the operation and a minimal non-private sample; do not suppress the error.                                                           |
+| A local app requires a newer macOS version                    | Inspect `src-tauri/target/native-bundle-manifest.json`; the linked native libraries determine the minimum OS. Changing only the app's version declaration does not make them compatible. |
+| Printer is offline or the tray is unknown                     | Check the printer and macOS queue. CUPS may provide cached or generic reasons; Pliflo does not infer a tray identity.                                                                    |
+
 ## Current platform status
 
 **macOS** is the supported first-release target and the only native printing path currently implemented and checked in development.
@@ -214,7 +257,7 @@ This avoids committing full iOS/Android icon matrices or duplicate template artw
 
 ## License
 
-No project-wide open-source license has been selected yet. The recorder and
-renderer imported from canvas-cairo-pdf retain their MIT licenses in their
-module directories. Related OOXML adapter/build code retains the notice in
-`compat/ooxml/LICENSE`. Third-party dependencies retain their own licenses.
+Pliflo is licensed under the [MIT License](LICENSE). Imported recorder, renderer
+and OOXML adapter code retain their original module-level notices. Dependencies
+and bundled native libraries retain their own licenses; see
+[Third-party notices](THIRD_PARTY_NOTICES.md).
