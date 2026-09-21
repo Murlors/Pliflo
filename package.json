@@ -15,6 +15,8 @@
     "test:native": "cargo test --workspace --locked",
     "fmt:native": "cargo fmt --all -- --check",
     "test:protocol": "vp test run packages/canvas-recorder/tests",
+    "test:lifecycle": "bun test tests/print-lifecycle.test.ts tests/document-cleanup.test.ts",
+    "test:packaging": "vp test run scripts/windows-pe.test.ts",
     "lint": "vp lint",
     "preview": "vp preview",
     "tauri": "tauri",

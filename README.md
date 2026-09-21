@@ -12,7 +12,22 @@ English | [简体中文](README.zh-CN.md)
 
 Pliflo is a local-first document batch printing app built with **Tauri 2 + React + TypeScript + Vite+**. It is designed for people who regularly print groups of PDFs, Office documents, Markdown files and images and want a faster workflow than opening and configuring every document one by one.
 
-The first release targets **macOS**. The architecture keeps Windows support in mind, but Windows printing behavior has not been validated yet.
+The released platform is **macOS**. Windows 11 x64 adaptation is in progress, with
+MSVC native packaging, local fonts and PDFium/GDI submission, tracking and cancellation.
+Initial Microsoft Print to PDF submission, status tracking and cancellation have been validated; physical printer output remains unverified. See [Windows development and validation](WINDOWS.md)
+for build requirements and acceptance gates; Windows is not yet a supported release.
+
+Dropdown menus share the app’s light/dark styling and support keyboard navigation, type-ahead and visible selection.
+
+Windows development builds isolate missing inputs as failed queue items and retry briefly locked preview artifacts. Portable launchers use faster compression and keep all third-party notices in `third-party.zip`; see [measured results and limits](WINDOWS.md).
+
+Windows conversion now avoids constructing an unused native font map for each
+document, and releases Canvas recording resources after each encoded page.
+Markdown paragraphs, quotations, code blocks and oversized table rows paginate
+across pages; unreadable/encrypted PDFs fail individually. Synthetic regression
+and repeated-batch memory measurements are documented in [WINDOWS.md](WINDOWS.md).
+Local Markdown images support Windows separators and URL-encoded filenames,
+including images inside paragraphs; remote images remain excluded.
 
 ## Download and install
 
@@ -57,7 +72,7 @@ Pliflo does not upload documents or require a server. Inspection, conversion, pr
 
 Non-PDF sources converge on the same model: **source file → WebView layout → Canvas recording → Rust Cairo/Pango → temporary PDF → preview/settings/queue/CUPS**. The local `@pliflo/canvas-recorder` and `canvas-cairo-replay` workspace libraries preserve supported text and vectors. Pages and embedded PNG assets travel through binary IPC and are spooled under the system-temp render directory. Documents are prepared one at a time; superseded/cancelled results are discarded and persisted batches rebuild from their original sources. Native cancellation is checked between pages. Complex drawing operations outside the renderer's supported Canvas subset fail visibly rather than silently dropping content.
 
-XLSX printing is intentionally pragmatic rather than an Excel-compatible print engine: it uses the worksheet used range, supports visible-sheet selection, fit-width and 100% scaling, and paginates vertically. Excel-specific print areas, repeating print titles and every page-layout feature are not currently reproduced. Image “actual size” uses 96 DPI when reliable physical-density metadata is unavailable.
+XLSX printing is intentionally pragmatic rather than an Excel-compatible print engine: it uses the worksheet used range, supports visible-sheet selection, fit-width and 100% scaling, paginates vertically, and splits wide sheets across columns at 100% scale. A single column wider than the page fails explicitly; use fit-width for that sheet. Excel-specific print areas, repeating print titles and every page-layout feature are not currently reproduced. Image “actual size” uses 96 DPI when reliable physical-density metadata is unavailable.
 
 ## Printing model
 
@@ -268,7 +283,7 @@ This avoids committing full iOS/Android icon matrices or duplicate template artw
 
 **macOS** is the supported first-release target and the only native printing path currently implemented and checked in development.
 
-**Windows** remains an intended extension target. The Windows icon is retained, but printer discovery, option mapping and job-status behavior still require a Windows-specific implementation and validation before Windows can be considered supported.
+**Windows 11 x64** has development NSIS and portable EXE builds, local conversion, and a PDFium/GDI print backend. Physical printer validation, clean-machine validation and macOS comparison remain acceptance gates; see [WINDOWS.md](WINDOWS.md). The portable EXE extracts app-local DLLs, runs without installation, then cleans them on normal exit. WebView2 is still required; self-extraction adds startup time.
 
 ## License
 

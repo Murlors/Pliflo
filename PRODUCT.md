@@ -6,6 +6,12 @@
 
 Desktop application. macOS is the supported first-release platform; Windows is a planned extension target that requires its own printing backend and validation.
 
+Windows 11 x64 adaptation has MSVC packaging, a private Windows font catalog,
+PDFium/GDI submission and spooler tracking/cancellation. Installer and self-extracting
+portable EXE builds are available. Initial Microsoft Print to PDF submission, tracking
+and cancellation are validated; physical printers still need authorized validation; see [WINDOWS.md](WINDOWS.md). Disappearing jobs without a
+completion report remain unconfirmed and are not automatically retried.
+
 ## Stack
 
 Tauri 2 desktop application with React, TypeScript and Vite+. macOS is the complete first-release target; the architecture keeps room for a Windows print backend later. All files stay local and there is no server.

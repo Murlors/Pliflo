@@ -11,7 +11,7 @@ const inputs = process.argv.slice(2).map((path) => resolve(path));
 if (!inputs.length) throw new Error("Usage: bun scripts/check-rendering.ts <document> [...]");
 const output = await mkdtemp(join(tmpdir(), "pliflo-cairo-check-"));
 const engine = process.env.PLIFLO_RENDER_BROWSER ?? "chromium";
-assert(["chromium", "webkit"].includes(engine), "Unsupported test browser");
+assert(["chromium", "webkit", "msedge"].includes(engine), "Unsupported test browser");
 assert(
   !(engine === "webkit" && process.env.PLIFLO_RENDER_PROFILE),
   "CPU profiling requires Chromium",
@@ -25,7 +25,10 @@ await writeFile(
 inputs.push(markdown);
 const server = await createServer({ server: { port: 0, strictPort: false, open: false } });
 await server.listen();
-const browser = await (engine === "webkit" ? webkit : chromium).launch({ headless: true });
+const browser = await (engine === "webkit" ? webkit : chromium).launch({
+  headless: true,
+  channel: engine === "msedge" ? "msedge" : undefined,
+});
 const watchdog = setTimeout(() => {
   void browser.close();
 }, 120_000);
@@ -54,7 +57,7 @@ try {
       return active;
     }
     if (command === "append_vector_pdf_page") {
-      assert.equal(options?.headers["x-pliflo-session"], active);
+      assert.equal(options?.headers["x-pliflo-session"], basename(active));
       assert.equal(Number(options?.headers["x-pliflo-index"]), pages.length);
       const bytes = Buffer.from(args as Uint8Array);
       recordingBytes += bytes.length;
@@ -148,50 +151,77 @@ try {
     }),
   );
   await page.goto(`${server.resolvedUrls!.local[0]}render-check`);
+  await page.evaluate(async () => {
+    const source = "/packages/canvas-recorder/tests/browser-lifecycle.ts";
+    const { checkRecorderLifecycle } = await import(/* @vite-ignore */ source);
+    await checkRecorderLifecycle();
+  });
   for (const path of inputs) {
-    const info = { path, name: basename(path), sizeBytes: (await stat(path)).size };
-    const started = performance.now();
-    await profiler?.send("Profiler.start");
-    const result = await page.evaluate(async (file) => {
-      const source = "/src/lib/documents.ts";
-      const { prepareDocument } = await import(/* @vite-ignore */ source);
-      return prepareDocument(file, { xlsxSheet: "all", xlsxScale: "fit", imageSizing: "fit" });
-    }, info);
-    if (profiler) {
-      const { profile } = await profiler.send("Profiler.stop");
-      await writeFile(join(active, "frontend.cpuprofile"), JSON.stringify(profile));
-      console.log(
-        JSON.stringify({
-          file: info.name,
-          hotFunctions: profile.nodes
-            .filter((node) => node.hitCount)
-            .sort((a, b) => (b.hitCount ?? 0) - (a.hitCount ?? 0))
-            .slice(0, 12)
-            .map((node) => ({ ...node.callFrame, hitCount: node.hitCount })),
-        }),
+    active = await mkdtemp(join(output, "source-"));
+    nativeMs = 0;
+    recordingBytes = 0;
+    try {
+      const info = { path, name: basename(path), sizeBytes: (await stat(path)).size };
+      const started = performance.now();
+      await profiler?.send("Profiler.start");
+      const result = await page.evaluate(
+        async (file) => {
+          const source = "/src/lib/documents.ts";
+          const { prepareDocument } = await import(/* @vite-ignore */ source);
+          return prepareDocument(file.info, {
+            xlsxSheet: "all",
+            xlsxScale: file.xlsxScale,
+            imageSizing: "fit",
+          });
+        },
+        { info, xlsxScale: process.env.PLIFLO_XLSX_SCALE ?? "fit-width" },
       );
+      if (profiler) {
+        const { profile } = await profiler.send("Profiler.stop");
+        await writeFile(join(active, "frontend.cpuprofile"), JSON.stringify(profile));
+        console.log(
+          JSON.stringify({
+            file: info.name,
+            hotFunctions: profile.nodes
+              .filter((node) => node.hitCount)
+              .sort((a, b) => (b.hitCount ?? 0) - (a.hitCount ?? 0))
+              .slice(0, 12)
+              .map((node) => ({ ...node.callFrame, hitCount: node.hitCount })),
+          }),
+        );
+      }
+      const text = execFileSync("pdftotext", [result.printPath, "-"], { encoding: "utf8" });
+      const report = {
+        file: info.name,
+        ...result,
+        ms: Math.round(performance.now() - started),
+        nativeMs: Math.round(nativeMs),
+        recordingBytes,
+        bytes: (await stat(result.printPath)).size,
+        textCharacters: text.trim().length,
+        browser: engine,
+      };
+      const pdfInfo = execFileSync("pdfinfo", [result.printPath], { encoding: "utf8" });
+      const pdfPages = Number(pdfInfo.match(/^Pages:\s+(\d+)/m)?.[1]);
+      if (result.generated)
+        assert.equal(pdfPages, result.pages, "PDF page count differs from preparation");
+      if (!["image", "pdf"].includes(result.format))
+        assert(text.trim().length > 0, "Missing searchable text");
+      await writeFile(join(active, "extracted.txt"), text);
+      await writeFile(join(active, "report.json"), JSON.stringify(report, null, 2));
+      await writeFile(join(active, "pdfinfo.txt"), pdfInfo);
+      await writeFile(
+        join(active, "pdffonts.txt"),
+        execFileSync("pdffonts", [result.printPath], { encoding: "utf8" }),
+      );
+      console.log(JSON.stringify(report));
+    } catch (error) {
+      await profiler?.send("Profiler.stop");
+      const report = { file: basename(path), failed: true, error: String(error) };
+      await writeFile(join(active, "report.json"), JSON.stringify(report, null, 2));
+      console.error(JSON.stringify(report));
+      process.exitCode = 1;
     }
-    const text = execFileSync("pdftotext", [result.printPath, "-"], { encoding: "utf8" });
-    const report = {
-      file: info.name,
-      ...result,
-      ms: Math.round(performance.now() - started),
-      nativeMs: Math.round(nativeMs),
-      recordingBytes,
-      bytes: (await stat(result.printPath)).size,
-      textCharacters: text.trim().length,
-      browser: engine,
-    };
-    const pdfInfo = execFileSync("pdfinfo", [result.printPath], { encoding: "utf8" });
-    const pdfPages = Number(pdfInfo.match(/^Pages:\s+(\d+)/m)?.[1]);
-    if (result.generated)
-      assert.equal(pdfPages, result.pages, "PDF page count differs from preparation");
-    if (!["image", "pdf"].includes(result.format))
-      assert(text.trim().length > 0, "Missing searchable text");
-    await writeFile(join(active, "extracted.txt"), text);
-    await writeFile(join(active, "report.json"), JSON.stringify(report, null, 2));
-    await writeFile(join(active, "pdfinfo.txt"), pdfInfo);
-    console.log(JSON.stringify(report));
   }
   // 已取消的任务不得创建会话、读取文件或返回产物。
   await page.evaluate(async () => {

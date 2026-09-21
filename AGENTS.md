@@ -8,6 +8,7 @@ This file defines the project-level rules for future coding agents and maintaine
 - The supported first-release platform is macOS.
 - The current native print backend uses the macOS/CUPS toolchain (`lp`, `lpstat`, `lpoptions`).
 - Windows remains an extension target. Do not treat the current CUPS implementation as portable; Windows support needs a platform-specific backend and real validation.
+- Windows 11 x64 development uses MSVC-matched native libraries, PDFium/GDI printing and NSIS installer/portable launchers. Follow [WINDOWS.md](WINDOWS.md). Automated checks must not call submission or cancellation APIs without explicit run-specific authorization; this includes virtual printers. A disappearing job is unconfirmed, not completed.
 - Files stay on-device. Avoid introducing a server, database, telemetry service or cloud dependency unless the product scope explicitly changes.
 - Small package size, fast startup, low maintenance cost and modest dependency count are product constraints, not optional optimizations.
 

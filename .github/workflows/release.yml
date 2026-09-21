@@ -43,7 +43,10 @@ jobs:
         run: bun x --no-install vp run check
 
       - name: Check recording protocol
-        run: bun x --no-install vp run test:protocol
+        run: |
+          bun x --no-install vp run test:protocol
+          bun x --no-install vp run test:lifecycle
+          bun x --no-install vp run test:packaging
 
       - name: Build application with native libraries
         run: bun x --no-install vp run desktop:build

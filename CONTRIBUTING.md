@@ -10,6 +10,12 @@ Install dependencies from the repository root with `bun install --frozen-lockfil
 Use the root Bun/Cargo workspaces and lockfiles. Do not depend on sibling checkouts
 or add a second OOXML parser to the recorder or renderer.
 
+Windows development uses MSVC x64 throughout; see [WINDOWS.md](WINDOWS.md) for
+the pinned native dependency baseline, NSIS packaging and separate acceptance
+gates. Keep source files LF as specified by `.gitattributes`, including hashed
+OOXML adapter fragments. Windows virtual printers require submission authorization
+just like physical devices.
+
 Keep changes focused and describe what changes for the user. Preserve source
 documents, binary page transfer, bounded preparation, cancellation and observable
 failures. Keep unsupported Canvas operations explicit rather than silently
@@ -32,6 +38,19 @@ run CI automatically.
 Never submit a real print job as a smoke test. Printer discovery is read-only;
 physical-device testing requires explicit authorization for that run. Do not
 commit private documents or generated PDFs. Use synthetic or authorized samples.
+
+For the larger Windows regression, generate a fresh system-temp fixture directory
+with `python scripts/generate-regression-fixtures.py <new-temp-directory>`.
+Development Python needs python-docx, python-pptx, openpyxl, Pillow, reportlab,
+pypdf and pdfplumber; none is an application runtime dependency. Run
+`bun scripts/check-windows-webview.ts <portable-exe> <fixture> [...]` with
+`PLIFLO_EXPECT_FAILED=broken.pdf;encrypted.pdf`, then
+`python scripts/check-regression-pdfs.py <fixture-directory> <report-directory>`.
+Set `PLIFLO_XLSX_ACTUAL=1` for the worksheet's 100% pagination check.
+Use `check-windows-cycles.ts` with the same inputs to measure three import/remove
+cycles; optional `PLIFLO_MEMORY_PYTHON` enables the Win32 process-tree sampler.
+The forced-GC snapshot is diagnostic only and must not be presented as normal
+application memory usage. These checks never submit or cancel print jobs.
 
 ## Changes and releases
 

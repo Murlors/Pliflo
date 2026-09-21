@@ -4,6 +4,13 @@
 `canvas-cairo-pdf` binary. It renders Canvas recording v1 to PDF;
 it does not lay out Office documents or submit print jobs.
 
+Windows selects and outputs text with the document's private FreeType map; it
+does not construct an unused default Win32 map. Repeated construction of that
+unused map caused substantial memory growth in the tested Windows dependency
+build. Embedded fonts remain document-local; macOS retains its CoreText selection
+path. Repeated-batch measurements and remaining WebView2 peaks are in
+[WINDOWS.md](../../WINDOWS.md).
+
 ## Build and run
 
 Install Rust and native Cairo (with PDF/PNG/FreeType support), Pango >= 1.56
@@ -28,10 +35,11 @@ export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$(brew --prefix)/share/pk
 cargo build --release --locked -p canvas-cairo-replay
 ```
 
-Windows requires native libraries matching the Rust target/toolchain, plus
-pkg-config discovery; for example MSYS2 UCRT64 Cairo/Pango/pkgconf with the
-`x86_64-pc-windows-gnu` Rust target. Supply toolchain paths via the environment,
-not repository configuration. This implementation uses portable gtk-rs crates;
+Windows application builds use MSVC x64 Cairo/Pango/FreeType/Fontconfig and the
+`x86_64-pc-windows-msvc` Rust target, with pkg-config discovery. Do not mix the
+application with MSYS2 UCRT64/MinGW libraries. See [Windows setup](../../WINDOWS.md).
+Supply toolchain paths via the environment, not repository configuration.
+This implementation uses portable gtk-rs crates;
 The renderer is independent of Tauri and can be tested with `cargo test -p canvas-cairo-replay`.
 Distribution still requires target-specific validation. Cross-compiling alone
 does not supply the target's native libraries or fonts.
@@ -79,6 +87,9 @@ The macOS system font catalog is initialized once per process; restart after
 installing or removing system fonts. Embedded fonts remain private to each PDF.
 Browser/native metric equality and complete Office fidelity are not guaranteed;
 known text, actual selected fonts and visual output must all be checked.
+Windows uses the private FreeType map for both selection and PDF output, with
+system and per-user Windows font directories and explicit generic-family aliases.
+It does not reuse macOS's native-only-font exception as a Windows font solution.
 Options are explicit and do not read the process environment. The CLI supports:
 
 - `PLIFLO_FONT_ALIASES`: path to a JSON object mapping family names to nonempty
