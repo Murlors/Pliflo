@@ -19,6 +19,13 @@ function document(): QueueItem {
   });
 }
 
+void test("unconfirmed output is neither active nor automatically retryable", () => {
+  const item = { ...document(), state: "unconfirmed" as const };
+  assert.equal(isActiveJob(item), false);
+  assert.equal(canRetryJob(item), false);
+  assert.match(describeReasons(["job-no-longer-in-queue"], COPY.en)[0], /Check the output/);
+});
+
 void test("retry preserves source and submitted settings but creates a fresh preparation attempt", () => {
   const item = document();
   item.state = "failed";

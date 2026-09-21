@@ -9,6 +9,7 @@ export function describeReasons(reasons: string[], copy: (typeof COPY)[keyof typ
         .map((reason) => {
           const key = reason.replace(/-(report|warning|error)$/, "");
           const labels: Record<string, string> = {
+            "job-no-longer-in-queue": copy.completionUnconfirmedHint,
             "media-empty": copy.mediaEmpty,
             "media-needed": copy.mediaNeeded,
             "media-jam": copy.mediaJam,

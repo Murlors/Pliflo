@@ -9,7 +9,7 @@ const LETTER = { widthPt: 612, heightPt: 792 };
 const RENDER_DPI = 144;
 const EMU_PER_POINT = 12_700;
 
-export type FileInfo = { path: string; name: string; sizeBytes: number };
+export type FileInfo = { path: string; name: string; sizeBytes: number; inspectionError?: string };
 type RenderedPage = {
   bytes: Uint8Array;
 };
@@ -64,7 +64,8 @@ async function createPdfSession() {
     add: async (page: RenderedPage) => {
       await invoke("append_vector_pdf_page", page.bytes, {
         headers: {
-          "x-pliflo-session": session,
+          // HTTP headers must be ASCII even when the Windows user/temp path is not.
+          "x-pliflo-session": session.split(/[\\/]/).pop()!,
           "x-pliflo-index": String(index),
         },
       });
@@ -160,7 +161,8 @@ function sanitizeMarkdown(html: string) {
 
 async function inlineMarkdownImages(html: string, sourcePath: string) {
   const parsed = new DOMParser().parseFromString(`<main>${html}</main>`, "text/html");
-  const sourceDir = sourcePath.slice(0, sourcePath.lastIndexOf("/") + 1);
+  const normalizedPath = sourcePath.replaceAll("\\", "/");
+  const sourceDir = normalizedPath.slice(0, normalizedPath.lastIndexOf("/") + 1);
   const objectUrls: string[] = [];
   for (const image of parsed.querySelectorAll("img")) {
     const src = image.getAttribute("src")?.trim();
@@ -173,9 +175,10 @@ async function inlineMarkdownImages(html: string, sourcePath: string) {
       continue;
     }
     try {
-      if (src.startsWith("/") || src.split("/").includes(".."))
+      const relative = decodeURIComponent(src).replaceAll("\\", "/");
+      if (/^(?:\/|[a-z][a-z0-9+.-]*:)/i.test(relative) || relative.split("/").includes(".."))
         throw new Error("Unsafe image path.");
-      const localPath = `${sourceDir}${src}`;
+      const localPath = `${sourceDir}${relative}`;
       const objectUrl = URL.createObjectURL(
         new Blob([await readLocalFile(localPath)], { type: imageMimeType(localPath) }),
       );
@@ -259,16 +262,43 @@ async function renderMarkdownHtml(html: string, onPage: PageSink) {
     const indent = options.indent ?? 0;
     current.context.font = options.font;
     const lines = breakMarkdownLine(current.context, text.trim(), contentWidth - indent);
-    await ensure(lines.length * options.lineHeight + (options.after ?? 0));
-    current.context.fillStyle = options.color ?? "#171717";
     for (const line of lines) {
+      await ensure(options.lineHeight);
+      current.context.font = options.font;
+      current.context.fillStyle = options.color ?? "#171717";
       current.context.fillText(line, left + indent, y);
       y += options.lineHeight;
     }
     y += options.after ?? 0;
   };
 
-  for (const element of Array.from(root?.children ?? [])) {
+  // Markdown puts images inside paragraphs (including linked images). Preserve
+  // text/image order in this block renderer instead of discarding the images
+  // when reading paragraph.textContent.
+  const blocks = Array.from(root?.children ?? []).flatMap((element) => {
+    if (element.tagName !== "P" || !element.querySelector("img")) return [element];
+    const parts: Element[] = [];
+    let text = "";
+    const flush = () => {
+      if (text.trim()) {
+        const paragraph = parsed.createElement("p");
+        paragraph.textContent = text;
+        parts.push(paragraph);
+      }
+      text = "";
+    };
+    const walker = parsed.createTreeWalker(element, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.nodeType === Node.TEXT_NODE) text += node.textContent ?? "";
+      else if ((node as Element).tagName === "IMG") {
+        flush();
+        parts.push(node as Element);
+      }
+    }
+    flush();
+    return parts;
+  });
+  for (const element of blocks) {
     const tag = element.tagName.toLowerCase();
     if (/^h[1-4]$/.test(tag)) {
       const level = Number(tag[1]);
@@ -311,12 +341,12 @@ async function renderMarkdownHtml(html: string, onPage: PageSink) {
         element.textContent?.trim() ?? "",
         contentWidth - 22,
       );
-      const height = lines.length * 22 + 16;
-      await ensure(height + 10);
-      current.context.fillStyle = "#d4d4d4";
-      current.context.fillRect(left, y, 3, height - 8);
-      current.context.fillStyle = "#525252";
       for (const line of lines) {
+        await ensure(22);
+        current.context.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        current.context.fillStyle = "#d4d4d4";
+        current.context.fillRect(left, y, 3, 22);
+        current.context.fillStyle = "#525252";
         current.context.fillText(line, left + 14, y);
         y += 22;
       }
@@ -329,17 +359,17 @@ async function renderMarkdownHtml(html: string, onPage: PageSink) {
         .replace(/\n$/, "")
         .split("\n")
         .flatMap((line) => breakMarkdownLine(current.context, line, contentWidth - 24));
-      const height = Math.max(38, lines.length * 18 + 24);
-      await ensure(height + 14);
-      current.context.fillStyle = "#f5f5f5";
-      current.context.fillRect(left, y, contentWidth, height);
-      current.context.fillStyle = "#262626";
-      let codeY = y + 12;
+      y += 8;
       for (const line of lines) {
-        current.context.fillText(line, left + 12, codeY);
-        codeY += 18;
+        await ensure(18);
+        current.context.font = "12px SFMono-Regular, Menlo, monospace";
+        current.context.fillStyle = "#f5f5f5";
+        current.context.fillRect(left, y, contentWidth, 18);
+        current.context.fillStyle = "#262626";
+        current.context.fillText(line, left + 12, y);
+        y += 18;
       }
-      y += height + 14;
+      y += 14;
       continue;
     }
     if (tag === "table") {
@@ -348,29 +378,42 @@ async function renderMarkdownHtml(html: string, onPage: PageSink) {
       const columnWidth = contentWidth / columnCount;
       current.context.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
       for (const row of rows) {
+        current.context.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
         const cells = Array.from(row.children);
         const cellLines = cells.map((cell) =>
           breakMarkdownLine(current.context, cell.textContent?.trim() ?? "", columnWidth - 16),
         );
-        const rowHeight = Math.max(30, ...cellLines.map((lines) => lines.length * 18 + 12));
-        await ensure(rowHeight);
-        for (let column = 0; column < columnCount; column += 1) {
-          const x = left + column * columnWidth;
-          const cell = cells[column];
-          if (cell?.tagName.toLowerCase() === "th") {
-            current.context.fillStyle = "#f5f5f5";
-            current.context.fillRect(x, y, columnWidth, rowHeight);
+        const lineCount = Math.max(1, ...cellLines.map((lines) => lines.length));
+        const fullHeight = Math.max(30, lineCount * 18 + 12);
+        // A row taller than a page must split; use the remaining space so its
+        // header is not stranded on the previous page.
+        await ensure(fullHeight > bottom - MARKDOWN_PAGE.margin ? 30 : fullHeight);
+        for (let offset = 0; offset < lineCount;) {
+          await ensure(30);
+          const count = Math.min(
+            lineCount - offset,
+            Math.max(1, Math.floor((bottom - y - 12) / 18)),
+          );
+          const rowHeight = Math.max(30, count * 18 + 12);
+          current.context.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+          for (let column = 0; column < columnCount; column += 1) {
+            const x = left + column * columnWidth;
+            if (cells[column]?.tagName.toLowerCase() === "th") {
+              current.context.fillStyle = "#f5f5f5";
+              current.context.fillRect(x, y, columnWidth, rowHeight);
+            }
+            current.context.strokeStyle = "#d4d4d4";
+            current.context.strokeRect(x, y, columnWidth, rowHeight);
+            current.context.fillStyle = "#171717";
+            let cellY = y + 6;
+            for (const line of (cellLines[column] ?? []).slice(offset, offset + count)) {
+              current.context.fillText(line, x + 8, cellY);
+              cellY += 18;
+            }
           }
-          current.context.strokeStyle = "#d4d4d4";
-          current.context.strokeRect(x, y, columnWidth, rowHeight);
-          current.context.fillStyle = "#171717";
-          let cellY = y + 6;
-          for (const line of cellLines[column] ?? []) {
-            current.context.fillText(line, x + 8, cellY);
-            cellY += 18;
-          }
+          y += rowHeight;
+          offset += count;
         }
-        y += rowHeight;
       }
       y += 14;
       continue;
@@ -489,7 +532,7 @@ function xlsxUsedBounds(sheet: { rows: Array<{ index: number; cells: Array<{ col
 }
 
 async function renderXlsx(path: string, options: DocumentRenderOptions, onPage: PageSink) {
-  const [{ XlsxWorkbook }, { fitWorksheetWidth }] = await Promise.all([
+  const [{ XlsxWorkbook }, { fitWorksheetWidth, worksheetColumnPages }] = await Promise.all([
     import("@silurus/ooxml/xlsx"),
     import("./xlsx-fit"),
   ]);
@@ -516,6 +559,10 @@ async function renderXlsx(path: string, options: DocumentRenderOptions, onPage: 
           ? 1
           : fitWorksheetWidth(sheet, used.cols, pixels.width, margin);
       const availableHeight = (pixels.height - margin * 2) / cellScale;
+      const columnPages =
+        options.xlsxScale === "actual"
+          ? worksheetColumnPages(sheet, used.cols, pixels.width - margin * 2)
+          : [{ col: 0, cols: used.cols }];
       let startRow = 0;
       while (startRow < used.rows) {
         let height = 0;
@@ -528,21 +575,23 @@ async function renderXlsx(path: string, options: DocumentRenderOptions, onPage: 
           height += rowHeightPx;
           endRow += 1;
         }
-        const canvas = createRecordedCanvas();
-        await workbook.renderViewport(
-          canvas,
-          sheetIndex,
-          { row: startRow, col: 0, rows: Math.max(1, endRow - startRow), cols: used.cols },
-          {
-            width: pixels.width,
-            height: pixels.height,
-            dpr: 1,
-            cellScale,
-            scrollOffsetX: -margin,
-            scrollOffsetY: -margin,
-          },
-        );
-        await onPage(await canvasToPage(canvas, page.widthPt, page.heightPt));
+        for (const columns of columnPages) {
+          const canvas = createRecordedCanvas();
+          await workbook.renderViewport(
+            canvas,
+            sheetIndex,
+            { row: startRow, ...columns, rows: Math.max(1, endRow - startRow) },
+            {
+              width: pixels.width,
+              height: pixels.height,
+              dpr: 1,
+              cellScale,
+              scrollOffsetX: -margin,
+              scrollOffsetY: -margin,
+            },
+          );
+          await onPage(await canvasToPage(canvas, page.widthPt, page.heightPt));
+        }
         startRow = Math.max(endRow, startRow + 1);
       }
     }
@@ -618,7 +667,17 @@ export async function cleanupGeneratedDocument(
   item: Pick<DocumentInfo, "generated" | "printPath">,
 ) {
   if (!item.generated) return;
-  await invoke("cleanup_printable_pdf", { path: item.printPath }).catch(() => undefined);
+  // WebView2 may hold the PDF briefly after its preview is removed. Retry the
+  // owned artifact only; persistent locks are left for the stale-cache sweep.
+  for (const delay of [0, 150, 500, 1500]) {
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    try {
+      await invoke("cleanup_printable_pdf", { path: item.printPath });
+      return;
+    } catch {
+      // Bounded retries keep removal responsive when a lock persists.
+    }
+  }
 }
 
 export function paperForMedia(media: string) {

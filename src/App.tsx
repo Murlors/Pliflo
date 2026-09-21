@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
 import { CircleAlert, X } from "lucide-react";
@@ -87,10 +88,19 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const theme = preferences.theme === "system" ? systemTheme : preferences.theme;
   const copy = COPY[locale];
+  useEffect(() => {
+    const unlisten = listen("print-spooling-close-blocked", () =>
+      setNotice(copy.spoolingCloseBlocked),
+    );
+    return () => {
+      void unlisten.then((stop) => stop());
+    };
+  }, [copy.spoolingCloseBlocked]);
   const stateLabel: Record<JobState, string> = {
     queued: copy.ready,
     submitting: copy.submitting,
@@ -100,6 +110,7 @@ function App() {
     completed: copy.completed,
     cancelled: copy.cancelled,
     failed: copy.attention,
+    unconfirmed: copy.completionUnconfirmed,
   };
 
   const selected = items.find((item) => item.id === selectedId) ?? null;
@@ -217,7 +228,7 @@ function App() {
   useEffect(() => {
     const freshTerminalItems = items.filter(
       (item) =>
-        ["completed", "cancelled", "failed"].includes(item.state) &&
+        ["completed", "cancelled", "failed", "unconfirmed"].includes(item.state) &&
         !archivedTerminalIdsRef.current.has(item.id),
     );
     if (!freshTerminalItems.length) return;
@@ -246,7 +257,7 @@ function App() {
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
     const storedHistory = history.filter(
       (item) =>
-        ["completed", "cancelled", "failed"].includes(item.state) &&
+        ["completed", "cancelled", "failed", "unconfirmed"].includes(item.state) &&
         (preferences.historyRetention === "forever" || (item.finishedAt ?? 0) >= cutoff),
     );
     localStorage.setItem("pliflo-history", JSON.stringify(storedHistory));
@@ -291,7 +302,9 @@ function App() {
                 generated: format !== "pdf",
               }),
               settings: { ...batchSettings },
-              preparing: true,
+              preparing: !file.inspectionError,
+              state: file.inspectionError ? ("failed" as const) : ("queued" as const),
+              error: file.inspectionError,
             },
           ];
         });
@@ -332,7 +345,9 @@ function App() {
                     systemReasons: status.reasons,
                     systemMessage: status.message,
                     error: undefined,
-                    finishedAt: ["completed", "cancelled", "failed"].includes(status.state)
+                    finishedAt: ["completed", "cancelled", "failed", "unconfirmed"].includes(
+                      status.state,
+                    )
                       ? (item.finishedAt ?? Date.now())
                       : undefined,
                   }
@@ -431,7 +446,9 @@ function App() {
                   systemReasons: status.reasons,
                   systemMessage: status.message,
                   statusUnavailable: status.state === "unknown",
-                  finishedAt: ["completed", "cancelled", "failed"].includes(status.state)
+                  finishedAt: ["completed", "cancelled", "failed", "unconfirmed"].includes(
+                    status.state,
+                  )
                     ? Date.now()
                     : undefined,
                 };
@@ -855,7 +872,7 @@ function App() {
           onLocaleChange={setLocale}
           onClearHistory={() => {
             for (const item of items) {
-              if (["completed", "cancelled", "failed"].includes(item.state)) {
+              if (["completed", "cancelled", "failed", "unconfirmed"].includes(item.state)) {
                 archivedTerminalIdsRef.current.add(item.id);
               }
             }

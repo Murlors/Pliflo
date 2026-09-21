@@ -9,6 +9,7 @@ import { TextRunRecorder } from "./text";
 
 const recordings = new WeakMap<HTMLCanvasElement, CanvasRecording>();
 const binaryImages = new WeakMap<HTMLCanvasElement, Promise<Blob>[]>();
+const releases = new WeakMap<HTMLCanvasElement, () => void>();
 const createElement = document.createElement.bind(document);
 const draw = [
   "save",
@@ -58,6 +59,7 @@ export function recordCanvas(canvas: HTMLCanvasElement): CanvasRecording {
   const recording: CanvasRecording = { commands: [], unsupported: [] };
   const images: Promise<Blob>[] = [];
   const textRuns = new TextRunRecorder();
+  const originals = new Map<string, PropertyDescriptor | undefined>();
   binaryImages.set(canvas, images);
   const state = (): CanvasState => {
     const { a, b, c, d, e, f } = ctx.getTransform();
@@ -90,6 +92,7 @@ export function recordCanvas(canvas: HTMLCanvasElement): CanvasRecording {
   };
   for (const name of draw) {
     const original = ctx[name];
+    originals.set(name, Object.getOwnPropertyDescriptor(ctx, name));
     // DOM 重载函数的动态拦截采用 unknown[]，校验后才进入序列化协议。
     Object.defineProperty(ctx, name, {
       configurable: true,
@@ -108,6 +111,7 @@ export function recordCanvas(canvas: HTMLCanvasElement): CanvasRecording {
           const payload = `@binary:${images.length}`;
           const blob = new Promise<Blob>((resolve, reject) =>
             image.toBlob((value) => {
+              image.width = image.height = 0;
               if (value) resolve(value);
               else reject(new Error("Canvas PNG unavailable"));
             }, "image/png"),
@@ -131,7 +135,25 @@ export function recordCanvas(canvas: HTMLCanvasElement): CanvasRecording {
     });
   }
   recordings.set(canvas, recording);
+  releases.set(canvas, () => {
+    for (const [name, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(ctx, name, descriptor);
+      else Reflect.deleteProperty(ctx, name);
+    }
+    recording.commands.length = 0;
+    recording.unsupported.length = 0;
+    images.length = 0;
+  });
   return recording;
+}
+
+/** Call after encodePage settles; releases closures/assets without waiting for GC. */
+export function releaseCanvas(canvas: HTMLCanvasElement): void {
+  releases.get(canvas)?.();
+  releases.delete(canvas);
+  recordings.delete(canvas);
+  binaryImages.delete(canvas);
+  canvas.width = canvas.height = 0;
 }
 
 /** CCP1: magic、JSON 长度、JSON、图片数及各 PNG 长度/原始字节，整数使用 little-endian。 */

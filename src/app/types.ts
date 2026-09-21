@@ -37,6 +37,7 @@ export type JobState =
   | "blocked"
   | "completed"
   | "cancelled"
+  | "unconfirmed"
   | "failed";
 
 export type PrintSettings = {
@@ -73,7 +74,15 @@ export type QueueItem = DocumentInfo & {
 };
 
 export type PrintStatus = {
-  state: "submitted" | "printing" | "blocked" | "completed" | "cancelled" | "failed" | "unknown";
+  state:
+    | "submitted"
+    | "printing"
+    | "blocked"
+    | "completed"
+    | "cancelled"
+    | "failed"
+    | "unknown"
+    | "unconfirmed";
   reasons: string[];
   message: string;
 };

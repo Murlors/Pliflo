@@ -12,6 +12,16 @@ export class TextRunRecorder {
     if (command.op === "fillText" && command.args.length === 3 && width !== undefined) {
       const [text, x, y] = command.args;
       const state = command.state;
+      // Format adapters may assign a different fallback family to a zero-width
+      // ZWJ/variation selector. It has no glyph of its own: retain the preceding
+      // run's font so the following character can form the original grapheme.
+      const joinerOnly = width === 0 && /^(?:\u200d|\ufe0e|\ufe0f)+$/u.test(text);
+      const sameState =
+        previous &&
+        (JSON.stringify(previous.command.state) === JSON.stringify(state) ||
+          (joinerOnly &&
+            JSON.stringify({ ...previous.command.state, font: "" }) ===
+              JSON.stringify({ ...state, font: "" })));
       if (
         previous &&
         text &&
@@ -21,7 +31,7 @@ export class TextRunRecorder {
         state.direction !== "rtl" &&
         previous.command.args[2] === y &&
         Math.abs(previous.command.args[1] + previous.width - x) < 0.01 &&
-        JSON.stringify(previous.command.state) === JSON.stringify(state)
+        sameState
       ) {
         const joined = previous.command.args[0] + text;
         const boundary = previous.command.args[0].length;

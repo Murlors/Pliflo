@@ -146,6 +146,19 @@ describe("Canvas wire commands", () => {
 describe("Unicode grapheme recording", () => {
   const text = (value: string, x: number, patch: Partial<CanvasState> = {}) =>
     canvasCommand("fillText", [value, x, 10], { ...state(), ...patch });
+  it("preserves an emoji when the adapter gives only its zero-width joiner a different font", () => {
+    const recorder = new TextRunRecorder();
+    const commands: CanvasCommand[] = [];
+    recorder.append(commands, text("👩", 0), 10);
+    recorder.append(commands, text("\u200d", 10, { font: "12px Arial" }), 0);
+    recorder.append(commands, text("💻", 10), 10);
+    expect(commands.map((command) => command.args[0])).toEqual(["👩‍💻"]);
+    const spaced: CanvasCommand[] = [];
+    const other = new TextRunRecorder();
+    other.append(spaced, text("👩", 0), 10);
+    other.append(spaced, text("\u200d", 10, { font: "12px Arial" }), 1);
+    expect(spaced).toHaveLength(2);
+  });
   it("keeps accents and ZWJ sequences intact without merging ordinary words", () => {
     const recorder = new TextRunRecorder();
     const commands: CanvasCommand[] = [];
