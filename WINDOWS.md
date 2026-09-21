@@ -1,6 +1,7 @@
 # Windows implementation and validation
 
-Windows 11 x64 is the development target. macOS remains the released platform.
+Windows 11 x64 is an experimental preview target. macOS remains the supported platform.
+Release v1.3.0 distributes the Windows preview alongside the macOS packages.
 The PDFium/GDI backend has passed an initial authorized Microsoft Print to PDF test; physical printer output is not yet validated. Compilation, app startup,
 document conversion, discovery, spooler acceptance and physical output are separate
 acceptance gates. Do not infer one from another. No real or virtual printer may be
@@ -23,9 +24,11 @@ No GTK widgets are used by Pliflo.
 For initial development, the upstream
 [MSVC archive](https://github.com/wingtk/gvsbuild/releases/download/2026.8.0/GTK4_Gvsbuild_2026.8.0_x64.zip)
 has SHA-256 `1f95a92d037f5292da05e6ab1037032ff21ddb7b20d4ac8e83e3674c864c07b0`.
-Verify this digest before extracting. This is an upstream development build,
-not a production support guarantee; rebuild the pinned sources before a public
-Windows release. The whole archive is never included in the installer.
+Verify this digest before extracting. Experimental preview packages use this
+verified upstream MSVC build; they are not builds of the native dependencies
+from source on our release host. This is not a production support guarantee.
+Rebuilding the pinned sources remains a gate before declaring Windows stable and
+supported. The whole archive is never included in the installer.
 
 Set `PLIFLO_NATIVE_PREFIX` to the extracted or built prefix containing `bin`,
 `lib/pkgconfig` and `share/doc`. Add its `bin` to PATH, its `lib` to LIB and

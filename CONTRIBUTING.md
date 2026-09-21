@@ -74,6 +74,11 @@ application memory usage. These checks never submit or cancel print jobs.
   both jobs succeed, both DMGs are uploaded and the English release notes are
   reviewed. Remove abandoned drafts without deleting tags, commits or build
   records; do not move published tags to retry a release.
+- Windows preview assets are built locally from the release commit with the
+  documented MSVC dependencies and `vp run desktop:build`. Verify conversion and
+  cleanup without printing, upload both EXEs to the same draft, and clearly label
+  Windows as experimental. Do not publish stale binaries from an earlier version.
+  Include SHA-256 checksums for the final DMG and EXE assets.
 
 Project code uses [MIT](LICENSE); third-party notices remain in effect as described
 in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

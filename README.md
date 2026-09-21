@@ -12,10 +12,10 @@ English | [简体中文](README.zh-CN.md)
 
 Pliflo is a local-first document batch printing app built with **Tauri 2 + React + TypeScript + Vite+**. It is designed for people who regularly print groups of PDFs, Office documents, Markdown files and images and want a faster workflow than opening and configuring every document one by one.
 
-The released platform is **macOS**. Windows 11 x64 adaptation is in progress, with
+The supported platform is **macOS**. **Windows 11 x64 preview** packages provide
 MSVC native packaging, local fonts and PDFium/GDI submission, tracking and cancellation.
 Initial Microsoft Print to PDF submission, status tracking and cancellation have been validated; physical printer output remains unverified. See [Windows development and validation](WINDOWS.md)
-for build requirements and acceptance gates; Windows is not yet a supported release.
+for build requirements and acceptance gates; Windows remains experimental.
 
 Dropdown menus share the app’s light/dark styling and support keyboard navigation, type-ahead and visible selection.
 
@@ -31,13 +31,16 @@ including images inside paragraphs; remote images remain excluded.
 
 ## Download and install
 
-Download a DMG from [GitHub Releases](https://github.com/Murlors/Pliflo/releases):
+Download the appropriate package from [GitHub Releases](https://github.com/Murlors/Pliflo/releases):
 
 - Apple Silicon: choose `aarch64.dmg`.
 - Intel: choose `x64.dmg`.
+- Windows 11 x64 preview: choose `x64-setup.exe` to install, or `x64-portable.exe`
+  to launch without installation. These packages are unsigned. The installer
+  downloads WebView2 if missing; the portable app requires it to be installed.
 
 Open the DMG and drag Pliflo into Applications. Configure your printer in macOS
-before using the app. The v1.2.0 release packages declare macOS 15.0 as their
+before using the app. The v1.3.0 release packages declare macOS 15.0 as their
 minimum version; consult each release for its actual requirement. Builds are
 ad-hoc signed and not notarized unless release signing is configured.
 
@@ -283,7 +286,7 @@ This avoids committing full iOS/Android icon matrices or duplicate template artw
 
 **macOS** remains the supported platform, with a native CUPS printing backend.
 
-**Windows 11 x64** has development NSIS and portable EXE builds, local conversion, and a PDFium/GDI print backend. Physical printer validation, clean-machine validation and macOS comparison remain acceptance gates; see [WINDOWS.md](WINDOWS.md). The portable EXE extracts app-local DLLs, runs without installation, then cleans them on normal exit. WebView2 is still required; self-extraction adds startup time.
+**Windows 11 x64** has experimental NSIS and portable EXE packages, local conversion, and a PDFium/GDI print backend. Physical printer validation, clean-machine validation and same-document macOS comparison remain acceptance gates; see [WINDOWS.md](WINDOWS.md). The portable EXE extracts app-local DLLs, runs without installation, then cleans them on normal exit. WebView2 is still required; self-extraction adds startup time.
 
 ## License
 

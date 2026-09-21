@@ -20,16 +20,18 @@ Markdown 本地图片支持 Windows 路径分隔符和 URL 编码文件名，段
 
 ## 下载与安装
 
-在 [GitHub Releases](https://github.com/Murlors/Pliflo/releases) 下载对应的 DMG：
+在 [GitHub Releases](https://github.com/Murlors/Pliflo/releases) 下载对应平台的文件：
 
 | Mac 类型      | 下载文件                    |
 | ------------- | --------------------------- |
 | Apple Silicon | 文件名以 `aarch64.dmg` 结尾 |
 | Intel         | 文件名以 `x64.dmg` 结尾     |
 
+Windows 11 x64 实验版提供 `x64-setup.exe` 安装器和 `x64-portable.exe` 免安装启动程序，均未签名。缺少 WebView2 时安装器需要联网下载；免安装版要求系统已有 WebView2。物理打印机和纯净系统安装仍待验证，不能视为正式支持。
+
 打开 DMG，将 Pliflo 拖入“应用程序”。使用前先在 macOS 中配置打印机。
 
-v1.2.0 的两种架构发布包均声明最低 macOS 15.0；其他版本请以对应发布说明为准。本地构建可能因原生依赖版本不同而要求更新的系统。未配置正式签名时，构建使用临时签名且未经 Apple 公证，首次打开可能出现 Gatekeeper 提示。
+v1.3.0 的两种架构发布包均声明最低 macOS 15.0；其他版本请以对应发布说明为准。本地构建可能因原生依赖版本不同而要求更新的系统。未配置正式签名时，构建使用临时签名且未经 Apple 公证，首次打开可能出现 Gatekeeper 提示。
 
 ## 主要功能
 
