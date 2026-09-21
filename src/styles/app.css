@@ -181,7 +181,7 @@
 .app-shell[data-theme="light"] .drawer-heading h2,
 .app-shell[data-theme="light"] .file-copy strong,
 .app-shell[data-theme="light"] .queue-summary strong,
-.app-shell[data-theme="light"] .select-shell select,
+.app-shell[data-theme="light"] .select-shell .select-trigger,
 .app-shell[data-theme="light"] .stepper span {
   color: #262c25;
 }
@@ -769,7 +769,47 @@ summary:focus-visible {
   position: relative;
 }
 
-.select-shell select {
+.select-shell:has(.select-trigger:not(:disabled)):hover {
+  border-color: var(--control-muted);
+}
+
+.select-shell .select-trigger:focus-visible {
+  outline: 2px solid var(--screen-strong);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.select-menu {
+  border: 1px solid var(--console-line-strong);
+  border-radius: 7px;
+  background: var(--control-bg);
+  color: var(--control-text-strong);
+  box-shadow: 0 8px 24px #0003;
+  overscroll-behavior: contain;
+}
+
+.select-option {
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.select-option[aria-selected="true"] {
+  font-weight: 650;
+  background: var(--control-bg-active);
+}
+
+.select-option[data-active="true"] {
+  background: var(--control-bg-hover);
+  outline: 1px solid var(--control-muted);
+  outline-offset: -1px;
+}
+
+.select-option[aria-disabled="true"] {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.select-shell .select-trigger {
   width: 100%;
   height: 100%;
   appearance: none;
@@ -801,7 +841,7 @@ summary:focus-visible {
   border-color: rgba(184, 237, 80, 0.48);
 }
 
-.select-shell.prominent select {
+.select-shell.prominent .select-trigger {
   padding-right: 23px;
   font-size: var(--text-sm);
   font-weight: 620;
@@ -896,7 +936,7 @@ summary:focus-visible {
   border-color: rgba(184, 237, 80, 0.42);
 }
 
-.select-shell.compact select {
+.select-shell.compact .select-trigger {
   padding-right: 18px;
   font-size: var(--text-xs);
 }
@@ -938,7 +978,7 @@ summary:focus-visible {
 }
 
 .segmented button:disabled,
-.select-shell select:disabled {
+.select-shell .select-trigger:disabled {
   opacity: 0.38;
   cursor: default;
 }
@@ -1268,11 +1308,13 @@ summary:focus-visible {
   color: var(--console-muted);
 }
 
-.state-blocked {
+.state-blocked,
+.state-unconfirmed {
   color: var(--warning);
 }
 
 .app-shell[data-theme="light"] .printer-alert,
-.app-shell[data-theme="light"] .state-blocked {
+.app-shell[data-theme="light"] .state-blocked,
+.app-shell[data-theme="light"] .state-unconfirmed {
   color: #805615;
 }

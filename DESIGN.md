@@ -62,7 +62,8 @@ Use the native/system sans-serif stack for low runtime cost and platform fit. Hi
 - Lucide is the only icon set.
 - No emoji.
 - Icon-only buttons require accessible labels.
-- Native form controls should be visually integrated with explicit foreground/background colors.
+- Dropdown choices use the shared `Select` component, with themed menus, selected marks, keyboard navigation, type-ahead, Escape dismissal and visible focus. Menus open outside scrolling panels and stay inside the viewport. Driver capability checks and disabled fieldsets still govern availability.
+- Other native form controls should be visually integrated with explicit foreground/background colors.
 - Hover and focus states increase contrast; keyboard focus remains visible.
 - Frequent actions stay compact. Primary submission gets the strongest visual weight.
 - Light and dark themes must preserve the same hierarchy, capability states and action emphasis rather than simply inverting colors.

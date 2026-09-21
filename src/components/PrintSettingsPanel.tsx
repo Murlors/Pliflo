@@ -1,3 +1,4 @@
+import { Select } from "./Select";
 import {
   ChevronDown,
   FileText,
@@ -195,11 +196,11 @@ export function PrintSettingsPanel({
         <label className="text-xs font-620">{labels.printer}</label>
         <div className="select-shell prominent mt-2 flex h-10.5 items-center gap-2 px-2.5">
           <Printer size={17} />
-          <select
+          <Select
             aria-label={labels.printer}
             value={selectedPrinter}
             disabled={queueRunning}
-            onChange={(event) => onPrinterChange(event.target.value)}
+            onValueChange={(value) => onPrinterChange(value)}
           >
             {!printers.length && <option value="">{labels.noPrinters}</option>}
             {printers.map((printer) => (
@@ -208,7 +209,7 @@ export function PrintSettingsPanel({
                 {printer.isDefault ? ` — ${labels.defaultPrinter}` : ""}
               </option>
             ))}
-          </select>
+          </Select>
           <ChevronDown size={15} />
         </div>
         <div className="printer-meta mt-2 flex items-center gap-1.5 text-xs">
@@ -312,10 +313,10 @@ export function PrintSettingsPanel({
           <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
             <label className="text-xs font-620">{labels.paper}</label>
             <div className="select-shell compact h-7.25 w-38 justify-self-end px-2 max-[1240px]:w-35.5">
-              <select
+              <Select
                 aria-label={labels.paperSize}
                 value={settings.media}
-                onChange={(event) => onChangeSetting({ media: event.target.value })}
+                onValueChange={(value) => onChangeSetting({ media: value })}
               >
                 {(printerCapabilities?.media.length
                   ? printerCapabilities.media
@@ -329,7 +330,7 @@ export function PrintSettingsPanel({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </Select>
               <ChevronDown size={14} />
             </div>
           </div>
@@ -370,18 +371,18 @@ export function PrintSettingsPanel({
           <div className="setting-row grid min-h-9.5 grid-cols-[78px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
             <label className="text-xs font-620">{labels.twoSided}</label>
             <div className="select-shell compact h-7.25 w-38 justify-self-end px-2 max-[1240px]:w-35.5">
-              <select
+              <Select
                 aria-label={labels.twoSidedPrinting}
                 value={settings.duplex}
                 disabled={!printerCapabilities || !printerCapabilities.supportsDuplex}
-                onChange={(event) =>
-                  onChangeSetting({ duplex: event.target.value as PrintSettings["duplex"] })
+                onValueChange={(value) =>
+                  onChangeSetting({ duplex: value as PrintSettings["duplex"] })
                 }
               >
                 <option value="none">{labels.off}</option>
                 <option value="long">{labels.longEdge}</option>
                 <option value="short">{labels.shortEdge}</option>
-              </select>
+              </Select>
               <ChevronDown size={14} />
             </div>
           </div>
@@ -450,12 +451,12 @@ export function PrintSettingsPanel({
                 <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
                   <label className="text-xs font-620">{labels.sheets}</label>
                   <div className="select-shell compact h-7.25 w-38 justify-self-end px-2 max-[1240px]:w-35.5">
-                    <select
+                    <Select
+                      aria-label={labels.sheets}
                       value={selected.renderOptions.xlsxSheet}
-                      onChange={(event) =>
+                      onValueChange={(value) =>
                         onChangeRenderOptions({
-                          xlsxSheet:
-                            event.target.value === "all" ? "all" : Number(event.target.value),
+                          xlsxSheet: value === "all" ? "all" : Number(value),
                         })
                       }
                     >
@@ -465,7 +466,7 @@ export function PrintSettingsPanel({
                           {name}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                     <ChevronDown size={14} />
                   </div>
                 </div>
@@ -514,11 +515,12 @@ export function PrintSettingsPanel({
             <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
               <label className="text-xs font-620">{labels.pagesPerSheet}</label>
               <div className="select-shell compact h-7.25 w-38 justify-self-end px-2 max-[1240px]:w-35.5">
-                <select
+                <Select
+                  aria-label={labels.pagesPerSheet}
                   value={settings.pagesPerSheet}
-                  onChange={(event) =>
+                  onValueChange={(value) =>
                     onChangeSetting({
-                      pagesPerSheet: Number(event.target.value) as PrintSettings["pagesPerSheet"],
+                      pagesPerSheet: Number(value) as PrintSettings["pagesPerSheet"],
                     })
                   }
                 >
@@ -527,7 +529,7 @@ export function PrintSettingsPanel({
                       {count}
                     </option>
                   ))}
-                </select>
+                </Select>
                 <ChevronDown size={14} />
               </div>
             </div>
@@ -536,16 +538,17 @@ export function PrintSettingsPanel({
                 {settings.pagesPerSheet > 1 ? labels.outputPageSet : labels.pageSet}
               </label>
               <div className="select-shell compact h-7.25 w-38 justify-self-end px-2 max-[1240px]:w-35.5">
-                <select
+                <Select
+                  aria-label={settings.pagesPerSheet > 1 ? labels.outputPageSet : labels.pageSet}
                   value={settings.pageSet}
-                  onChange={(event) =>
-                    onChangeSetting({ pageSet: event.target.value as PrintSettings["pageSet"] })
+                  onValueChange={(value) =>
+                    onChangeSetting({ pageSet: value as PrintSettings["pageSet"] })
                   }
                 >
                   <option value="all">{labels.allPages}</option>
                   <option value="odd">{labels.oddPages}</option>
                   <option value="even">{labels.evenPages}</option>
-                </select>
+                </Select>
                 <ChevronDown size={14} />
               </div>
             </div>
@@ -561,9 +564,10 @@ export function PrintSettingsPanel({
               <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
                 <label className="text-xs font-620">{labels.paperSource}</label>
                 <div className="select-shell compact h-7.25 w-38 justify-self-end px-2 max-[1240px]:w-35.5">
-                  <select
+                  <Select
+                    aria-label={labels.paperSource}
                     value={settings.tray}
-                    onChange={(event) => onChangeSetting({ tray: event.target.value })}
+                    onValueChange={(value) => onChangeSetting({ tray: value })}
                   >
                     <option value="">{labels.printerDefault}</option>
                     {printerCapabilities.trays.map((option) => (
@@ -571,7 +575,7 @@ export function PrintSettingsPanel({
                         {option.label}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                   <ChevronDown size={14} />
                 </div>
               </div>
@@ -580,10 +584,11 @@ export function PrintSettingsPanel({
               <div className="setting-row grid min-h-9.5 grid-cols-[88px_minmax(0,1fr)] items-center gap-2 max-[1240px]:grid-cols-[68px_minmax(0,1fr)]">
                 <label className="text-xs font-620">{labels.printQuality}</label>
                 <div className="select-shell compact h-7.25 w-38 justify-self-end px-2 max-[1240px]:w-35.5">
-                  <select
+                  <Select
+                    aria-label={labels.printQuality}
                     value={settings.quality}
-                    onChange={(event) =>
-                      onChangeSetting({ quality: event.target.value as PrintSettings["quality"] })
+                    onValueChange={(value) =>
+                      onChangeSetting({ quality: value as PrintSettings["quality"] })
                     }
                   >
                     <option value="printer">{labels.printerDefault}</option>
@@ -598,7 +603,7 @@ export function PrintSettingsPanel({
                       "Best",
                       "5",
                     ]) && <option value="high">{labels.qualityHigh}</option>}
-                  </select>
+                  </Select>
                   <ChevronDown size={14} />
                 </div>
               </div>

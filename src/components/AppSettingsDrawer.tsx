@@ -1,3 +1,4 @@
+import { Select } from "./Select";
 import { ChevronDown, RotateCcw, X } from "lucide-react";
 import type { AppPreferences, Locale } from "../app/types";
 
@@ -117,17 +118,18 @@ export function AppSettingsDrawer({
         <div className="setting-row wide-label grid min-h-10.5 grid-cols-[minmax(104px,0.8fr)_minmax(150px,1.2fr)] items-center gap-2 py-0.75">
           <label>{labels.printerPreference}</label>
           <div className="select-shell compact w-full min-w-0">
-            <select
+            <Select
+              aria-label={labels.printerPreference}
               value={preferences.printerPreference}
-              onChange={(event) =>
+              onValueChange={(value) =>
                 onPreferencesChange({
-                  printerPreference: event.target.value as AppPreferences["printerPreference"],
+                  printerPreference: value as AppPreferences["printerPreference"],
                 })
               }
             >
               <option value="system">{labels.useSystemPrinter}</option>
               <option value="last">{labels.useLastPrinter}</option>
-            </select>
+            </Select>
             <ChevronDown size={14} />
           </div>
         </div>
@@ -155,18 +157,19 @@ export function AppSettingsDrawer({
           <div className="setting-row wide-label grid min-h-10.5 grid-cols-[minmax(104px,0.8fr)_minmax(150px,1.2fr)] items-center gap-2 py-0.75">
             <label>{labels.historyRetention}</label>
             <div className="select-shell compact w-full min-w-0">
-              <select
+              <Select
+                aria-label={labels.historyRetention}
                 value={preferences.historyRetention}
-                onChange={(event) =>
+                onValueChange={(value) =>
                   onPreferencesChange({
-                    historyRetention: event.target.value as AppPreferences["historyRetention"],
+                    historyRetention: value as AppPreferences["historyRetention"],
                   })
                 }
               >
                 <option value="session">{labels.historySession}</option>
                 <option value="30d">{labels.history30d}</option>
                 <option value="forever">{labels.historyForever}</option>
-              </select>
+              </Select>
               <ChevronDown size={14} />
             </div>
           </div>
