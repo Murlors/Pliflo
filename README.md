@@ -281,7 +281,7 @@ This avoids committing full iOS/Android icon matrices or duplicate template artw
 
 ## Current platform status
 
-**macOS** is the supported first-release target and the only native printing path currently implemented and checked in development.
+**macOS** remains the supported platform, with a native CUPS printing backend.
 
 **Windows 11 x64** has development NSIS and portable EXE builds, local conversion, and a PDFium/GDI print backend. Physical printer validation, clean-machine validation and macOS comparison remain acceptance gates; see [WINDOWS.md](WINDOWS.md). The portable EXE extracts app-local DLLs, runs without installation, then cleans them on normal exit. WebView2 is still required; self-extraction adds startup time.
 

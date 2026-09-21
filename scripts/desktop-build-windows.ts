@@ -145,7 +145,10 @@ const packagedManifest = {
     [...libraries].map(([name, item]) => [name, { ...item, source: basename(item.source) }]),
   ),
 };
-writeFileSync(join(notices, "native-bundle-manifest.json"), JSON.stringify(packagedManifest, null, 2));
+writeFileSync(
+  join(notices, "native-bundle-manifest.json"),
+  JSON.stringify(packagedManifest, null, 2),
+);
 // Preserve every notice, but avoid hundreds of tiny writes/scans on each portable
 // launch. Windows Explorer can open the archive without another runtime.
 execFileSync(
