@@ -1,7 +1,7 @@
-//! 只读查询本机 CUPS 的 IPP 状态；不创建、修改或提交作业。
+//! Read-only platform printer/job status; never creates or changes jobs.
 use serde::Serialize;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrintStatus {
     pub state: String,
@@ -9,6 +9,7 @@ pub struct PrintStatus {
     pub message: String,
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn job_state(value: i32) -> &'static str {
     match value {
         3 => "submitted",
@@ -209,7 +210,13 @@ pub async fn get_printer_status(printer: String) -> Result<PrintStatus, String> 
             .await
             .map_err(|e| e.to_string())?
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        tauri::async_runtime::spawn_blocking(move || crate::windows_print::status(&printer))
+            .await
+            .map_err(|error| error.to_string())?
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = printer;
         Err("Printer status is only available on macOS".into())
@@ -224,7 +231,13 @@ pub async fn get_print_job_status(job_id: String) -> Result<PrintStatus, String>
             .await
             .map_err(|e| e.to_string())?
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        tauri::async_runtime::spawn_blocking(move || crate::windows_print::job(&job_id))
+            .await
+            .map_err(|error| error.to_string())?
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = job_id;
         Err("Print job status is only available on macOS".into())

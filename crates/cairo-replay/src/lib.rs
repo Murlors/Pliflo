@@ -3,7 +3,7 @@
 mod binary;
 pub mod protocol;
 pub use binary::decode_recording;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 mod fontconfig;
 mod fonts;
 mod render;

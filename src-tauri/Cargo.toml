@@ -20,5 +20,16 @@ tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 lopdf.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+libloading = "0.8"
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Printing",
+  "Win32_Graphics_Gdi",
+  "Win32_Storage_Xps",
+  "Win32_Security",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
 [dev-dependencies]
 serde_json.workspace = true

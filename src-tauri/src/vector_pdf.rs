@@ -19,7 +19,15 @@ pub(crate) fn append_vector_pdf_page(request: tauri::ipc::Request<'_>) -> Result
         tauri::ipc::InvokeBody::Raw(bytes) => bytes,
         _ => return Err("Expected binary page IPC".into()),
     };
-    let dir = checked_render_session(session)?;
+    if session.is_empty()
+        || !session
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'-')
+    {
+        return Err("Invalid render session identifier".into());
+    }
+    let path = crate::rendered_root().join(session);
+    let dir = checked_render_session(path.to_str().ok_or("Invalid render path")?)?;
     append_page(&dir, index, bytes)
 }
 

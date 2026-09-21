@@ -17,6 +17,10 @@ import { basename, dirname, join, resolve } from "node:path";
 const run = (tool: string, args: string[]) => execFileSync(tool, args, { encoding: "utf8" }).trim();
 const bun = process.execPath;
 const args = process.argv.slice(2);
+if (process.platform === "win32") {
+  await import("./desktop-build-windows");
+  process.exit(0);
+}
 if (args.some((arg) => arg !== "--app-only"))
   throw new Error("Only --app-only is supported; build on the target architecture");
 if (process.platform !== "darwin")

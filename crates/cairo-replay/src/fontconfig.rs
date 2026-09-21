@@ -1,4 +1,4 @@
-//! macOS 的分发包不依赖 Homebrew 的 fonts.conf；由 CoreText 枚举系统可用字体。
+//! Self-contained system font catalogs; no developer-machine fonts.conf dependency.
 use anyhow::{ensure, Context, Result};
 use pango::glib::translate::ToGlibPtr;
 use std::{
@@ -7,7 +7,7 @@ use std::{
     sync::OnceLock,
 };
 
-#[link(name = "fontconfig")]
+#[cfg_attr(target_os = "macos", link(name = "fontconfig"))]
 unsafe extern "C" {
     fn FcConfigCreate() -> *mut c_void;
     fn FcConfigDestroy(config: *mut c_void);
@@ -18,10 +18,12 @@ unsafe extern "C" {
         complain: c_int,
     ) -> c_int;
 }
+#[cfg(target_os = "macos")]
 #[link(name = "CoreText", kind = "framework")]
 unsafe extern "C" {
     fn CTFontManagerCopyAvailableFontURLs() -> *const c_void;
 }
+#[cfg(target_os = "macos")]
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
     fn CFArrayGetCount(array: *const c_void) -> isize;
@@ -34,7 +36,7 @@ unsafe extern "C" {
     ) -> u8;
     fn CFRelease(value: *const c_void);
 }
-#[link(name = "pangoft2-1.0")]
+#[cfg_attr(target_os = "macos", link(name = "pangoft2-1.0"))]
 unsafe extern "C" {
     fn pango_fc_font_map_set_config(map: *mut pango::ffi::PangoFontMap, config: *mut c_void);
 }
@@ -74,11 +76,19 @@ fn system_fonts(cache: &Path) -> Result<Config> {
         .replace('<', "&lt;")
         .replace('>', "&gt;");
     // 包含通用的合成样式规则，避免依赖构建机的 90-synthetic.conf。
+    #[cfg(target_os = "macos")]
+    let aliases = r#"<alias binding="same"><family>emoji</family><prefer><family>Apple Color Emoji</family></prefer></alias>"#;
+    #[cfg(target_os = "windows")]
+    let aliases = r#"
+      <alias><family>sans-serif</family><prefer><family>Segoe UI</family><family>Microsoft YaHei</family></prefer></alias>
+      <alias><family>serif</family><prefer><family>Times New Roman</family><family>SimSun</family></prefer></alias>
+      <alias><family>monospace</family><prefer><family>Consolas</family><family>Microsoft YaHei</family></prefer></alias>
+      <alias binding="same"><family>emoji</family><prefer><family>Segoe UI Emoji</family></prefer></alias>"#;
     let xml = CString::new(format!(
         r#"<fontconfig>
       <cachedir>{cache}</cachedir>
       <!-- Pango 使用 emoji 泛型选择彩色字形，不能回退到系统缺字占位字体。 -->
-      <alias binding="same"><family>emoji</family><prefer><family>Apple Color Emoji</family></prefer></alias>
+      {aliases}
       <match target="font">
         <test name="slant"><const>roman</const></test>
         <test target="pattern" name="slant" compare="not_eq"><const>roman</const></test>
@@ -98,6 +108,12 @@ fn system_fonts(cache: &Path) -> Result<Config> {
         unsafe { FcConfigParseAndLoadFromMemory(config.0.as_ptr(), xml.as_ptr().cast(), 1) } != 0,
         "Cannot configure PDF fonts"
     );
+    load_system_fonts(&config)?;
+    Ok(config)
+}
+
+#[cfg(target_os = "macos")]
+fn load_system_fonts(config: &Config) -> Result<()> {
     // 由系统提供实际字体路径，覆盖不同 macOS 版本的私有目录和字体资源卷。
     // Copy 返回拥有的 CFArray；其中 URL 借用至数组释放，不修改系统注册状态。
     let urls = unsafe { CTFontManagerCopyAvailableFontURLs() };
@@ -116,5 +132,42 @@ fn system_fonts(cache: &Path) -> Result<Config> {
     }
     unsafe { CFRelease(urls) };
     ensure!(loaded > 0, "Cannot load system font files");
-    Ok(config)
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn load_system_fonts(config: &Config) -> Result<()> {
+    let windows = std::env::var_os("SystemRoot").context("Missing Windows system directory")?;
+    let mut directories = vec![std::path::PathBuf::from(windows).join("Fonts")];
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        directories.push(std::path::PathBuf::from(local).join("Microsoft/Windows/Fonts"));
+    }
+    let mut loaded = 0;
+    for directory in directories {
+        if !directory.exists() {
+            continue;
+        }
+        for entry in std::fs::read_dir(&directory)? {
+            let path = entry?.path();
+            if !path.is_file() {
+                continue;
+            }
+            let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            if !["ttf", "ttc", "otf", "otc"]
+                .iter()
+                .any(|value| extension.eq_ignore_ascii_case(value))
+            {
+                continue;
+            }
+            // Fontconfig's Windows API accepts UTF-8, not the ANSI code page.
+            let path = CString::new(path.to_str().context("Invalid system font path")?)?;
+            if unsafe { FcConfigAppFontAddFile(config.0.as_ptr(), path.as_ptr().cast()) } != 0 {
+                loaded += 1;
+            }
+        }
+    }
+    ensure!(loaded > 0, "Cannot load Windows system fonts");
+    Ok(())
 }

@@ -3,6 +3,19 @@
 Pliflo's own code is licensed under the [MIT License](LICENSE). This does not
 replace the licenses or copyright notices of third-party code and libraries.
 
+Windows development uses MSVC builds of the same Cairo/Pango/FreeType/Fontconfig
+stack. The Windows packager includes upstream native notices from `share/doc`,
+project notices and a DLL hash/size inventory. Visual C++ runtime redistribution
+must follow the installed Visual Studio license. The gvsbuild development archive
+is a build input, not a library license or a completed distribution audit; pinned
+source recipes and remaining release gates are documented in [WINDOWS.md](WINDOWS.md).
+Windows packages include PDFium chromium/8057 (155.0.8057.0), using the
+non-V8/non-XFA x64 build from bblanchon/pdfium-binaries. PDFium uses a BSD-style
+license; its third-party libraries retain their own terms. The package includes
+the complete archive `licenses` directory, build arguments, version, and the
+binary distributor's MIT notice under `pdfium*` inside the Windows `third-party.zip` archive. PDFium is used to
+read/render PDFs into Windows GDI, not to generate Pliflo's document PDFs.
+
 ## Source included in this repository
 
 | Location                   | Origin                                      | Notice                                  |

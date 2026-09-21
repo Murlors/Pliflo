@@ -1,7 +1,9 @@
 use std::{collections::BTreeMap, fs, path::Path};
 
 use anyhow::{ensure, Context, Result};
-use pango::{prelude::*, AttrFontDesc, AttrList, FontDescription, FontMap, Layout};
+use pango::{prelude::*, FontDescription, FontMap, Layout};
+#[cfg(not(target_os = "windows"))]
+use pango::{AttrFontDesc, AttrList};
 
 use crate::protocol::FontResource;
 
@@ -21,9 +23,16 @@ impl FontResolver {
         let pdf = pangocairo::FontMap::for_font_type(cairo::FontType::FontTypeFt)
             .context("Cairo/Pango FreeType support is required for PDF text")?;
         let directory = tempfile::Builder::new().prefix("fonts-").tempdir_in(root)?;
+        // Windows selects and draws through the same private FreeType catalog.
+        // Constructing the unused Win32 backend enumerates native font resources
+        // for every document, even though it is immediately replaced afterwards.
+        #[cfg(target_os = "windows")]
+        let system = pdf.clone();
+        #[cfg(not(target_os = "windows"))]
+        let system = pangocairo::FontMap::new();
         Ok(Self {
             pdf,
-            system: pangocairo::FontMap::new(),
+            system,
             embedded: BTreeMap::new(),
             directory,
             bytes: 0,
@@ -34,7 +43,7 @@ impl FontResolver {
 
     fn ensure_configured(&mut self) -> Result<()> {
         if !self.configured {
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             crate::fontconfig::configure(&self.pdf, self.directory.path())?;
             self.configured = true;
         }
@@ -82,6 +91,15 @@ impl FontResolver {
                 self.pdf.list_families();
             }
             let path = self.directory.path().join(format!("{}.otf", self.count));
+            // Cairo's Windows FT backend still uses a MAX_PATH-sized font-path
+            // buffer. Pango can accept the face and then silently draw nothing.
+            // Fail before registration instead of producing an incomplete PDF.
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::ffi::OsStrExt;
+                ensure!(path.as_os_str().encode_wide().count() < 260,
+                    "Embedded font path exceeds the Windows native renderer limit; use a shorter system temp path");
+            }
             fs::write(&path, &font.bytes)?;
             self.pdf
                 .add_font_file(&path)
@@ -154,41 +172,68 @@ impl FontResolver {
             return Ok(Self::layout(&self.pdf, cr, &embedded_desc, text, rtl));
         }
         let selection = Self::layout(&self.system, cr, desc, text, rtl);
-        let attributes = AttrList::new();
-        let mut iter = selection.iter();
-        loop {
-            if let Some(run) = iter.run_readonly() {
-                let item = run.item();
-                let actual = item.analysis().font().describe();
-                // 部分 macOS 系统字体使用 FreeType 不支持的轮廓格式。
-                // 原生 map 能绘制而 PDF map 无此字体时，保留整个文字调用的
-                // 系统排版，避免换成另一字体后破坏宽度及字形；内嵌字体仍走私有 map。
-                if actual
-                    .family()
-                    .is_some_and(|family| self.pdf.family(&family).is_none())
-                {
-                    return Ok(selection);
+        // Windows selection already uses our configured FreeType map. Rebuilding
+        // the same layout on that map serves no purpose.
+        #[cfg(target_os = "windows")]
+        return Ok(selection);
+        #[cfg(not(target_os = "windows"))]
+        {
+            let attributes = AttrList::new();
+            let mut iter = selection.iter();
+            loop {
+                if let Some(run) = iter.run_readonly() {
+                    let item = run.item();
+                    let actual = item.analysis().font().describe();
+                    // 部分 macOS 系统字体使用 FreeType 不支持的轮廓格式。
+                    // 原生 map 能绘制而 PDF map 无此字体时，保留整个文字调用的
+                    // 系统排版，避免换成另一字体后破坏宽度及字形；内嵌字体仍走私有 map。
+                    if actual
+                        .family()
+                        .is_some_and(|family| self.pdf.family(&family).is_none())
+                    {
+                        return Ok(selection);
+                    }
+                    let mut chosen = desc.clone();
+                    chosen.set_family(actual.family().as_deref().unwrap_or("sans-serif"));
+                    let mut attr = AttrFontDesc::new(&chosen);
+                    attr.set_start_index(item.offset() as u32);
+                    attr.set_end_index((item.offset() + item.length()) as u32);
+                    attributes.insert(attr);
                 }
-                let mut chosen = desc.clone();
-                chosen.set_family(actual.family().as_deref().unwrap_or("sans-serif"));
-                let mut attr = AttrFontDesc::new(&chosen);
-                attr.set_start_index(item.offset() as u32);
-                attr.set_end_index((item.offset() + item.length()) as u32);
-                attributes.insert(attr);
+                if !iter.next_run() {
+                    break;
+                }
             }
-            if !iter.next_run() {
-                break;
-            }
+            let layout = Self::layout(&self.pdf, cr, desc, text, rtl);
+            layout.set_attributes(Some(&attributes));
+            Ok(layout)
         }
-        let layout = Self::layout(&self.pdf, cr, desc, text, rtl);
-        layout.set_attributes(Some(&attributes));
-        Ok(layout)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn completed_document_releases_private_font_map() {
+        let root = tempfile::tempdir().unwrap();
+        let mut resolver = FontResolver::new(root.path()).unwrap();
+        let weak = resolver.pdf.downgrade();
+        let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, 256, 64).unwrap();
+        let cr = cairo::Context::new(&surface).unwrap();
+        let desc = crate::text::parse_font("14px sans-serif", &BTreeMap::new()).unwrap();
+        let layout = resolver.resolve(&cr, &desc, "A 中文", false).unwrap();
+        pangocairo::functions::show_layout(&cr, &layout);
+        drop(layout);
+        drop(cr);
+        drop(surface);
+        drop(resolver);
+        assert!(
+            weak.upgrade().is_none(),
+            "Document font map retained after teardown"
+        );
+    }
 
     fn resource(bytes: &[u8]) -> FontResource {
         FontResource {
@@ -197,6 +242,53 @@ mod tests {
             style: "normal".into(),
             bytes: bytes.to_vec(),
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_rejects_unsafe_long_embedded_font_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let long = root.path().join("a".repeat(100)).join("b".repeat(100));
+        fs::create_dir_all(&long).unwrap();
+        let mut resolver = FontResolver::new(&long).unwrap();
+        let error = resolver
+            .add(&[resource(include_bytes!("../tests/fixtures/font-a.ttf"))])
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("native renderer limit"),
+            "{error}"
+        );
+        drop(resolver);
+        assert_eq!(fs::read_dir(long).unwrap().count(), 0);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_fonts_work_without_developer_configuration() {
+        let root = tempfile::tempdir().unwrap();
+        let unicode = root.path().join("中文 user space");
+        fs::create_dir(&unicode).unwrap();
+        let mut resolver = FontResolver::new(&unicode).unwrap();
+        let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, 1, 1).unwrap();
+        let cr = cairo::Context::new(&surface).unwrap();
+        for font in [
+            "12px Segoe UI",
+            "bold 12px Segoe UI",
+            "italic 12px Arial",
+            "12px MissingPlifloFont,sans-serif",
+        ] {
+            let desc = crate::text::parse_font(font, &BTreeMap::new()).unwrap();
+            let layout = resolver
+                .resolve(&cr, &desc, "Hello 中文 e\u{301} 👩‍💻", false)
+                .unwrap();
+            assert_eq!(layout.unknown_glyphs_count(), 0, "{font}");
+            assert!(layout.size().0 > 0);
+        }
+        resolver
+            .add(&[resource(include_bytes!("../tests/fixtures/font-a.ttf"))])
+            .unwrap();
+        drop(resolver);
+        assert_eq!(fs::read_dir(unicode).unwrap().count(), 0);
     }
 
     #[cfg(target_os = "macos")]

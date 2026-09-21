@@ -1,11 +1,16 @@
 mod vector_pdf;
+#[cfg(target_os = "windows")]
+mod windows_pdf;
+#[cfg(target_os = "windows")]
+mod windows_print;
 use serde::{Deserialize, Serialize};
 mod print_status;
 use print_status::{get_print_job_status, get_printer_status};
+#[cfg(target_os = "macos")]
+use std::process::Command;
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -77,6 +82,8 @@ struct FileInfo {
     path: String,
     name: String,
     size_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inspection_error: Option<String>,
 }
 
 fn rendered_root() -> PathBuf {
@@ -102,11 +109,15 @@ fn inspect_files(paths: Vec<String>) -> Result<Vec<FileInfo>, String> {
         .into_iter()
         .map(|path| {
             let file_path = Path::new(&path);
-            let metadata =
-                fs::metadata(file_path).map_err(|error| format!("Cannot read {path}: {error}"))?;
-            if !metadata.is_file() {
-                return Err(format!("Not a file: {path}"));
-            }
+            let metadata = fs::metadata(file_path)
+                .map_err(|error| format!("Cannot read {path}: {error}"))
+                .and_then(|metadata| {
+                    if metadata.is_file() {
+                        Ok(metadata)
+                    } else {
+                        Err(format!("Not a file: {path}"))
+                    }
+                });
             let name = file_path
                 .file_name()
                 .and_then(|name| name.to_str())
@@ -115,7 +126,8 @@ fn inspect_files(paths: Vec<String>) -> Result<Vec<FileInfo>, String> {
             Ok(FileInfo {
                 path,
                 name,
-                size_bytes: metadata.len(),
+                size_bytes: metadata.as_ref().map_or(0, |metadata| metadata.len()),
+                inspection_error: metadata.err(),
             })
         })
         .collect()
@@ -178,19 +190,18 @@ fn cleanup_render_session(session: String) -> Result<(), String> {
 
 #[tauri::command]
 fn cleanup_printable_pdf(path: String) -> Result<(), String> {
-    let root = rendered_root();
     let candidate = PathBuf::from(path);
-    let canonical_root = root.canonicalize().unwrap_or(root);
-    let Some(parent) = candidate.parent() else {
-        return Ok(());
-    };
-    let canonical_parent = parent
-        .canonicalize()
-        .unwrap_or_else(|_| parent.to_path_buf());
-    if canonical_parent.starts_with(&canonical_root) {
-        let _ = fs::remove_dir_all(canonical_parent);
+    if candidate.file_name().and_then(|name| name.to_str()) != Some("printable.pdf") {
+        return Err("Not a generated printable artifact".into());
     }
-    Ok(())
+    let parent = candidate.parent().ok_or("Invalid artifact path")?;
+    if !parent.exists() {
+        return Ok(());
+    }
+    let session = checked_render_session(parent.to_str().ok_or("Invalid artifact path")?)?;
+    // Windows may refuse deletion while a viewer holds the file. Surface the error
+    // rather than claiming cleanup succeeded; a later cleanup can retry.
+    fs::remove_dir_all(session).map_err(|error| format!("Cannot remove render session: {error}"))
 }
 
 #[tauri::command]
@@ -215,6 +226,7 @@ fn cleanup_stale_printable_pdfs() -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 fn command_output(program: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new(program)
         .args(args)
@@ -231,6 +243,7 @@ fn command_output(program: &str, args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn parse_print_job_id(raw: &str) -> Option<String> {
     raw.split(|char: char| {
         !char.is_ascii_alphanumeric() && char != '-' && char != '_' && char != '.'
@@ -245,6 +258,7 @@ fn parse_print_job_id(raw: &str) -> Option<String> {
     .map(ToOwned::to_owned)
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn print_job_destination(job_id: &str) -> Option<&str> {
     let (destination, sequence) = job_id.rsplit_once('-')?;
     (!destination.is_empty()
@@ -253,6 +267,7 @@ fn print_job_destination(job_id: &str) -> Option<&str> {
     .then_some(destination)
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn parse_default_destination<'a>(raw: &str, destinations: &'a [&str]) -> Option<&'a str> {
     let output = raw.trim();
     let separator = output
@@ -267,6 +282,7 @@ fn parse_default_destination<'a>(raw: &str, destinations: &'a [&str]) -> Option<
         .find(|destination| *destination == candidate)
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn supports_duplex(options: &[PrinterOption]) -> bool {
     options.iter().any(|option| {
         let value = option.value.to_ascii_lowercase();
@@ -274,6 +290,7 @@ fn supports_duplex(options: &[PrinterOption]) -> bool {
     })
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn supports_color(options: &[PrinterOption]) -> bool {
     options.iter().any(|option| {
         let value = option.value.to_ascii_lowercase();
@@ -286,6 +303,7 @@ fn parse_printer_options(output: &str) -> Vec<(String, Vec<PrinterOption>)> {
     output.lines().filter_map(parse_printer_option).collect()
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn find_printer_option<'a>(
     groups: &'a [(String, Vec<PrinterOption>)],
     keys: &[&str],
@@ -297,6 +315,7 @@ fn find_printer_option<'a>(
     })
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn find_option_value<'a>(options: &'a [PrinterOption], candidates: &[&str]) -> Option<&'a str> {
     options.iter().find_map(|option| {
         candidates
@@ -306,11 +325,13 @@ fn find_option_value<'a>(options: &'a [PrinterOption], candidates: &[&str]) -> O
     })
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn printer_assignment(key: &str, value: &str) -> String {
     format!("{key}={value}")
 }
 
 /// 驱动与标准 IPP 参数保持一致，显式单面不能依赖打印机默认值。
+#[cfg(any(target_os = "macos", test))]
 fn duplex_assignments(
     groups: &[(String, Vec<PrinterOption>)],
     mode: &str,
@@ -399,9 +420,16 @@ fn inspect_pdfs(paths: Vec<String>) -> Result<Vec<PdfInfo>, String> {
             }
             let metadata =
                 fs::metadata(file_path).map_err(|error| format!("Cannot read {path}: {error}"))?;
-            let pages = lopdf::Document::load(file_path)
-                .ok()
-                .map(|document| document.get_pages().len());
+            let document = lopdf::Document::load(file_path)
+                .map_err(|error| format!("Cannot parse PDF {path}: {error}"))?;
+            if document.is_encrypted() {
+                return Err(format!("Password-protected PDF is not supported: {path}"));
+            }
+            let count = document.get_pages().len();
+            if count == 0 {
+                return Err(format!("PDF has no readable pages: {path}"));
+            }
+            let pages = Some(count);
             let name = file_path
                 .file_name()
                 .and_then(|name| name.to_str())
@@ -443,13 +471,21 @@ fn list_printers() -> Result<Vec<PrinterInfo>, String> {
         .collect())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+#[tauri::command]
+async fn list_printers() -> Result<Vec<PrinterInfo>, String> {
+    tauri::async_runtime::spawn_blocking(windows_print::list)
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 #[tauri::command]
 fn list_printers() -> Result<Vec<PrinterInfo>, String> {
     Err("Printer discovery is implemented for macOS in this release.".to_string())
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 fn parse_printer_option(line: &str) -> Option<(String, Vec<PrinterOption>)> {
     let (heading, values) = line.split_once(':')?;
     let key = heading.split('/').next()?.trim().to_string();
@@ -541,7 +577,15 @@ fn get_printer_capabilities(printer: String) -> Result<PrinterCapabilities, Stri
     Ok(capabilities)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+#[tauri::command]
+async fn get_printer_capabilities(printer: String) -> Result<PrinterCapabilities, String> {
+    tauri::async_runtime::spawn_blocking(move || windows_print::capabilities(&printer))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 #[tauri::command]
 fn get_printer_capabilities(_printer: String) -> Result<PrinterCapabilities, String> {
     Ok(PrinterCapabilities::default())
@@ -698,14 +742,27 @@ fn submit_print_job(
     Ok(SubmitResult { job_id, raw })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 #[tauri::command]
 fn submit_print_job(
-    _path: String,
-    _printer: String,
-    _settings: PrintSettings,
+    path: String,
+    printer: String,
+    settings: PrintSettings,
 ) -> Result<SubmitResult, String> {
-    Err("Printing is implemented for macOS in this release.".to_string())
+    let _ = (path, printer, settings);
+    Err("PDF print submission is not yet enabled on this platform.".to_string())
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+async fn submit_print_job(
+    path: String,
+    printer: String,
+    settings: PrintSettings,
+) -> Result<SubmitResult, String> {
+    tauri::async_runtime::spawn_blocking(move || windows_print::submit(path, printer, settings))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[cfg(target_os = "macos")]
@@ -715,14 +772,96 @@ fn cancel_print_job(job_id: String) -> Result<(), String> {
     command_output("cancel", &[job_id.as_str()]).map(|_| ())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 #[tauri::command]
-fn cancel_print_job(_job_id: String) -> Result<(), String> {
+fn cancel_print_job(job_id: String) -> Result<(), String> {
+    let _ = job_id;
     Err("Job cancellation is implemented for macOS in this release.".to_string())
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+async fn cancel_print_job(job_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || windows_print::cancel(&job_id))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn damaged_pdf_is_rejected_without_modifying_source() {
+        use super::*;
+        let dir = create_rendered_dir().unwrap();
+        let path = dir.join("broken.pdf");
+        let bytes = b"%PDF-1.7\nsynthetic invalid PDF";
+        fs::write(&path, bytes).unwrap();
+        assert!(inspect_pdfs(vec![path.to_string_lossy().into()]).is_err());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        cleanup_render_session(dir.to_string_lossy().into()).unwrap();
+    }
+    #[test]
+    fn missing_input_does_not_abort_other_files() {
+        use super::*;
+        let dir = create_rendered_dir().unwrap();
+        let source = dir.join("中文 source.md");
+        fs::write(&source, "synthetic source").unwrap();
+        let paths = vec![dir.join("missing.docx"), source.clone(), dir.clone()];
+        let result = inspect_files(
+            paths
+                .iter()
+                .map(|path| path.to_string_lossy().into())
+                .collect(),
+        )
+        .unwrap();
+        assert_eq!(result.len(), 3);
+        assert!(result[0].inspection_error.is_some());
+        assert!(result[1].inspection_error.is_none());
+        assert_eq!(result[1].size_bytes, 16);
+        assert!(result[2].inspection_error.is_some());
+        assert_eq!(fs::read_to_string(source).unwrap(), "synthetic source");
+        cleanup_render_session(dir.to_string_lossy().into()).unwrap();
+    }
+    #[cfg(windows)]
+    #[test]
+    fn windows_long_paths_locked_files_and_cleanup_retry() {
+        use super::*;
+        use std::os::windows::fs::OpenOptionsExt;
+        let root = create_rendered_dir().unwrap();
+        let mut nested = root.clone();
+        for _ in 0..12 {
+            nested.push("中文 user name with spaces");
+        }
+        fs::create_dir_all(&nested).unwrap();
+        let source = nested.join("source 原始.md");
+        assert!(source.as_os_str().len() > 260);
+        fs::write(&source, "unchanged source").unwrap();
+        assert!(read_local_file(source.to_string_lossy().into()).is_ok());
+        let locked = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&source)
+            .unwrap();
+        assert!(read_local_file(source.to_string_lossy().into()).is_err());
+        drop(locked);
+        assert_eq!(fs::read_to_string(&source).unwrap(), "unchanged source");
+        assert!(cleanup_printable_pdf(source.to_string_lossy().into()).is_err());
+        let generated = create_rendered_dir().unwrap();
+        let pdf = generated.join("printable.pdf");
+        fs::write(&pdf, "synthetic artifact").unwrap();
+        let locked = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&pdf)
+            .unwrap();
+        assert!(cleanup_printable_pdf(pdf.to_string_lossy().into()).is_err());
+        assert!(pdf.exists());
+        drop(locked);
+        cleanup_printable_pdf(pdf.to_string_lossy().into()).unwrap();
+        assert!(!generated.exists());
+        assert_eq!(fs::read_to_string(&source).unwrap(), "unchanged source");
+        cleanup_render_session(root.to_string_lossy().into()).unwrap();
+    }
     use super::{
         normalize_page_range, parse_default_destination, parse_print_job_id, parse_printer_option,
         print_job_destination, supports_color, supports_duplex, PrinterOption,
@@ -847,6 +986,18 @@ mod tests {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .on_window_event(|window, event| {
+            #[cfg(target_os = "windows")]
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if windows_print::is_spooling() {
+                    use tauri::Emitter;
+                    api.prevent_close();
+                    let _ = window.emit("print-spooling-close-blocked", ());
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            let _ = (window, event);
+        })
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             inspect_files,
